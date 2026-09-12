@@ -1,0 +1,700 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dashboard — Signal</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
+<style>
+  :root{
+    --ink:#0F172A; --paper:#F7F7F5; --amber:#E8A33D;
+    --added:#1F7A4D; --removed:#B23A34; --muted:#6B7280; --line:#E4E2DC; --text:#1A1D23;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;font-family:'Inter',sans-serif;color:var(--text);background:var(--paper);}
+  h1,h2,h3{font-family:'Space Grotesk',sans-serif;}
+
+  header{background:var(--ink);color:#fff;padding:16px 28px;display:flex;justify-content:space-between;align-items:center;}
+  .logo{font-family:'Space Grotesk';font-weight:700;font-size:18px;display:flex;align-items:center;gap:8px;}
+  .logo-mark{width:9px;height:9px;background:var(--amber);border-radius:2px;transform:rotate(45deg);}
+  .plan-badge{font-size:12px;background:#1E293B;padding:5px 12px;border-radius:20px;color:#B6BDCB;}
+
+  .layout{display:grid;grid-template-columns:340px 1fr;height:calc(100vh - 57px);}
+  @media(max-width:820px){.layout{grid-template-columns:1fr;height:auto;}}
+
+  .panel-left{border-right:1px solid var(--line);background:#fff;overflow-y:auto;padding:20px;}
+  .panel-left h2{font-size:16px;margin:0 0 14px;}
+  .add-btn{width:100%;padding:11px;background:var(--ink);color:#fff;border:none;border-radius:8px;font-weight:600;font-size:14px;cursor:pointer;margin-bottom:16px;}
+  .add-btn:hover{background:#1E293B;}
+  .cap-note{font-size:12px;color:var(--muted);margin-bottom:16px;}
+
+  .monitor-item{border:1px solid var(--line);border-radius:8px;padding:12px 14px;margin-bottom:10px;cursor:pointer;}
+  .monitor-item:hover{border-color:var(--ink);}
+  .monitor-item.active{border-color:var(--amber);background:#FFFBF3;}
+  .monitor-url{font-size:13px;font-weight:600;word-break:break-all;margin-bottom:4px;}
+  .monitor-meta{font-size:11px;color:var(--muted);display:flex;justify-content:space-between;align-items:center;}
+  .status-dot{width:7px;height:7px;border-radius:50%;display:inline-block;margin-right:5px;}
+  .status-checking{background:var(--amber);}
+  .status-active{background:var(--added);}
+  .empty-left{font-size:13px;color:var(--muted);text-align:center;padding:40px 10px;}
+
+  .panel-right{padding:28px;overflow-y:auto;}
+  .empty-right{color:var(--muted);font-size:14px;text-align:center;padding:80px 20px;}
+
+  /* Overview panel */
+  .overview-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:24px;}
+  @media(max-width:760px){.overview-grid{grid-template-columns:repeat(2,1fr);}}
+  .overview-card{background:#fff;border:1px solid var(--line);border-radius:10px;padding:18px 20px;}
+  .overview-card .ov-label{font-size:12px;color:var(--muted);margin-bottom:6px;}
+  .overview-card .ov-value{font-family:'Space Grotesk';font-size:26px;font-weight:700;color:var(--ink);}
+  .overview-card .ov-value.alert{color:var(--removed);}
+  .chart-card{background:#fff;border:1px solid var(--line);border-radius:10px;padding:20px;margin-bottom:24px;}
+  .chart-card h3{font-size:14px;margin:0 0 14px;}
+  .activity-card{background:#fff;border:1px solid var(--line);border-radius:10px;padding:20px;}
+  .activity-card h3{font-size:14px;margin:0 0 14px;}
+  .activity-item{display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid var(--line);font-size:13px;}
+  .activity-item:last-child{border-bottom:none;}
+  .activity-url{font-weight:600;word-break:break-all;}
+  .activity-summary{color:var(--muted);font-size:12px;margin-top:2px;}
+  .activity-time{color:var(--muted);font-size:11px;white-space:nowrap;margin-left:12px;}
+
+  .history-head{margin-bottom:20px;}
+  .history-head h2{font-size:20px;margin:0 0 6px;word-break:break-all;}
+  .history-head .sub{font-size:13px;color:var(--muted);}
+
+  .checking-state{display:flex;align-items:center;gap:10px;padding:16px;background:#fff;border:1px solid var(--line);border-radius:10px;margin-bottom:14px;font-size:14px;color:var(--muted);}
+  .spinner{width:16px;height:16px;border:2px solid var(--line);border-top-color:var(--amber);border-radius:50%;animation:spin 0.8s linear infinite;}
+  @keyframes spin{to{transform:rotate(360deg);}}
+
+  .diff-card{background:#fff;border:1px solid var(--line);border-radius:10px;padding:18px 20px;margin-bottom:12px;}
+  .badge{display:inline-block;padding:4px 11px;border-radius:20px;font-size:12px;font-weight:600;}
+  .impact-High{background:#FBE9E8;color:var(--removed);}
+  .impact-Medium{background:#FCEACB;color:#7A5300;}
+  .impact-Low{background:#E1E8F5;color:#294B8C;}
+  .impact-None{background:#EEE;color:var(--muted);}
+  .row{font-size:13px;margin:6px 0;}
+  .add{color:var(--added);} .rm{color:var(--removed);}
+
+  /* Modal */
+  .modal-overlay{display:none;position:fixed;inset:0;background:rgba(15,23,42,0.5);align-items:center;justify-content:center;z-index:50;}
+  .modal-overlay.open{display:flex;}
+  .modal{background:#fff;border-radius:14px;padding:28px;width:520px;max-width:90vw;max-height:85vh;overflow-y:auto;}
+  .modal h3{font-size:18px;margin:0 0 16px;}
+  .step{display:none;}
+  .step.active{display:block;}
+  .option-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:20px;}
+  .option-card{border:1.5px solid var(--line);border-radius:8px;padding:14px;cursor:pointer;font-size:13px;font-weight:600;text-align:center;}
+  .option-card.selected{border-color:var(--ink);background:#F7F7F5;}
+  input[type=text]{width:100%;padding:11px 14px;font-size:14px;border:1px solid #D8D5CC;border-radius:8px;margin-bottom:16px;font-family:'Inter';}
+  .channel-row{display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid var(--line);font-size:14px;}
+  .channel-row:last-child{border-bottom:none;}
+  .lock{font-size:11px;color:var(--muted);background:#EEE;padding:2px 8px;border-radius:10px;}
+  .toggle{width:36px;height:20px;background:var(--ink);border-radius:12px;position:relative;cursor:pointer;}
+  .toggle::after{content:'';position:absolute;width:16px;height:16px;background:#fff;border-radius:50%;top:2px;right:2px;}
+  .modal-actions{display:flex;justify-content:space-between;margin-top:20px;}
+  .btn-secondary{padding:10px 18px;background:none;border:1px solid var(--line);border-radius:8px;font-size:14px;cursor:pointer;}
+  .btn-primary{padding:10px 20px;background:var(--ink);color:#fff;border:none;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;}
+  .close-x{position:absolute;top:20px;right:24px;cursor:pointer;font-size:18px;color:var(--muted);background:none;border:none;}
+
+  /* Summary bar */
+  .summary-bar{display:flex;gap:0;background:#fff;border-bottom:1px solid var(--line);padding:14px 28px;}
+  .summary-stat{padding-right:32px;margin-right:32px;border-right:1px solid var(--line);}
+  .summary-stat:last-child{border-right:none;}
+  .summary-stat .num{font-family:'Space Grotesk';font-size:22px;font-weight:700;color:var(--ink);}
+  .summary-stat .label{font-size:12px;color:var(--muted);}
+
+  /* Monitor list item stats */
+  .monitor-stats{font-size:11px;color:var(--muted);margin-top:6px;display:flex;gap:8px;flex-wrap:wrap;}
+  .monitor-stats .chip{background:#F0F0EC;padding:2px 7px;border-radius:8px;}
+  .monitor-stats .chip.has-changes{background:#FCEACB;color:#7A5300;}
+
+  /* Timeline (Visualping-style history) */
+  .timeline-head{display:flex;justify-content:space-between;align-items:center;padding-bottom:16px;border-bottom:1px solid var(--line);margin-bottom:20px;}
+  .timeline-head h2{font-size:18px;margin:0;word-break:break-all;max-width:520px;}
+  .timeline-head .sub{font-size:12px;color:var(--muted);margin-top:4px;}
+  .run-check-btn{padding:9px 16px;background:var(--ink);color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap;}
+  .run-check-btn:disabled{background:#A3A9B4;cursor:not-allowed;}
+
+  .timeline{position:relative;padding-left:24px;}
+  .timeline::before{content:'';position:absolute;left:4px;top:6px;bottom:6px;width:2px;background:var(--line);}
+  .timeline-entry{position:relative;padding-bottom:24px;}
+  .timeline-dot{position:absolute;left:-24px;top:4px;width:9px;height:9px;border-radius:50%;background:var(--line);border:2px solid #fff;box-shadow:0 0 0 1px var(--line);}
+  .timeline-dot.has-changes{background:var(--amber);box-shadow:0 0 0 1px var(--amber);}
+  .timeline-dot.baseline{background:var(--muted);}
+  .timeline-time{font-size:12px;color:var(--muted);margin-bottom:4px;}
+  .timeline-summary{font-size:14px;margin-bottom:6px;}
+  .timeline-details{margin-top:8px;}
+
+  /* Uptime stat cards (UptimeRobot-style) */
+  .uptime-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:0;border:1px solid var(--line);border-radius:10px;overflow:hidden;margin-bottom:24px;background:#fff;}
+  @media(max-width:760px){.uptime-grid{grid-template-columns:repeat(2,1fr);}}
+  .uptime-cell{padding:16px 18px;border-right:1px solid var(--line);border-bottom:1px solid var(--line);}
+  .uptime-cell:last-child{border-right:none;}
+  .uptime-cell .u-label{font-size:12px;color:var(--muted);margin-bottom:6px;}
+  .uptime-cell .u-value{font-family:'Space Grotesk';font-size:22px;font-weight:700;}
+  .uptime-cell .u-value.up{color:var(--added);}
+  .uptime-cell .u-value.down{color:var(--removed);}
+  .uptime-cell .u-sub{font-size:11px;color:var(--muted);margin-top:4px;}
+  .status-pill{display:inline-flex;align-items:center;gap:6px;font-size:13px;font-weight:600;}
+  .status-pill .dot{width:8px;height:8px;border-radius:50%;}
+  .response-chart{margin-bottom:24px;}
+  .response-chart svg{width:100%;height:80px;display:block;}
+  .timeline-entry-row{display:flex;gap:14px;align-items:flex-start;}
+  .entry-thumb{width:120px;height:75px;object-fit:cover;object-position:top;border:1px solid var(--line);border-radius:6px;cursor:pointer;flex-shrink:0;}
+  .entry-thumb:hover{border-color:var(--ink);}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo"><span class="logo-mark"></span>Signal — Dashboard <span id="demoBadge" style="display:none;font-size:11px;background:var(--amber);color:var(--ink);padding:3px 9px;border-radius:10px;margin-left:8px;vertical-align:middle;">DEMO DATA</span></div>
+  <div style="display:flex;align-items:center;gap:14px;">
+    <button class="add-btn" id="openScanBtn" style="width:auto;margin:0;background:var(--amber);color:var(--ink);padding:9px 16px;">🔎 Site-wide scan</button>
+    <div class="plan-badge">Free plan — <span id="capLabel">0/3</span> pages</div>
+  </div>
+</header>
+
+<div class="summary-bar" id="summaryBar">
+  <div class="summary-stat"><div class="num" id="sumMonitors">–</div><div class="label">pages monitored</div></div>
+  <div class="summary-stat"><div class="num" id="sum7d">–</div><div class="label">changes in last 7 days</div></div>
+  <div class="summary-stat"><div class="num" id="sum30d">–</div><div class="label">changes in last 30 days</div></div>
+</div>
+
+<div class="layout">
+  <div class="panel-left">
+    <h2>Monitored pages</h2>
+    <button class="add-btn" id="openAddBtn">+ Add page to monitor</button>
+    <div class="cap-note">Free plan: up to 3 pages, daily checks, email alerts.</div>
+    <div class="monitor-item" onclick="showOverview()" style="font-weight:600;">📊 Overview</div>
+    <div id="monitorList"></div>
+  </div>
+
+  <div class="panel-right" id="panelRight">
+    <div id="overviewPanel"></div>
+  </div>
+</div>
+
+<!-- Add Monitor Modal -->
+<div class="modal-overlay" id="modalOverlay">
+  <div class="modal">
+    <button class="close-x" id="closeModal">✕</button>
+
+    <div class="step active" id="stepUrl">
+      <h3>Add a page to monitor</h3>
+      <input type="text" id="urlInput" placeholder="https://competitor.com/pricing" />
+      <div class="modal-actions" style="justify-content:flex-end;">
+        <button class="btn-primary" id="toStepCondition">Next →</button>
+      </div>
+    </div>
+
+    <div class="step" id="stepCondition">
+      <h3>Alert me when:</h3>
+      <div class="option-grid">
+        <div class="option-card selected" data-condition="any_change">Any change</div>
+        <div class="option-card" data-condition="high_impact">High-impact only</div>
+        <div class="option-card" data-condition="new_pages">New pages (sitemap)</div>
+        <div class="option-card" data-condition="outreach">Outreach opportunities only</div>
+      </div>
+      <h3>Check frequency</h3>
+      <div class="option-grid">
+        <div class="option-card selected" data-frequency="daily">Daily (free)</div>
+        <div class="option-card" style="opacity:0.5;cursor:not-allowed;" title="Upgrade to unlock">Every 12h 🔒</div>
+      </div>
+      <div class="modal-actions">
+        <button class="btn-secondary" id="backToUrl">← Back</button>
+        <button class="btn-primary" id="toStepChannels">Next →</button>
+      </div>
+    </div>
+
+    <div class="step" id="stepChannels">
+      <h3>Notification channels</h3>
+      <div class="channel-row"><span>✉️ Email</span><div class="toggle"></div></div>
+      <div class="channel-row" style="flex-direction:column;align-items:stretch;gap:8px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;"><span>💬 Slack</span><span id="slackStatusLabel" style="font-size:11px;color:var(--muted);">Optional</span></div>
+        <input type="text" id="slackWebhookInput" placeholder="Paste Slack incoming webhook URL (optional)" style="margin-bottom:0;font-size:13px;padding:9px 12px;" />
+      </div>
+      <div class="channel-row"><span>📄 PDF report export</span><span class="lock">Upgrade to unlock</span></div>
+      <div class="channel-row"><span>🔔 Browser notifications</span><button class="btn-secondary" id="enableNotifsBtn" style="padding:6px 12px;font-size:12px;">Enable</button></div>
+      <div class="modal-actions">
+        <button class="btn-secondary" id="backToCondition">← Back</button>
+        <button class="btn-primary" id="startMonitoring">Start monitoring</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Site-wide Scan Modal -->
+<div class="modal-overlay" id="scanModalOverlay">
+  <div class="modal" style="width:640px;">
+    <button class="close-x" id="closeScanModal">✕</button>
+    <h3>Site-wide scan</h3>
+    <p style="font-size:13px;color:var(--muted);margin-top:-8px;">Crawls up to 12 pages from the site's sitemap, flags newly published pages, and checks every outbound link found for confirmed broken/dead targets — real outreach opportunities, no history needed.</p>
+    <input type="text" id="scanUrlInput" placeholder="https://competitor.com (any page — we'll find its sitemap)" />
+    <button class="btn-primary" id="runScanBtn" style="width:100%;">Run site-wide scan</button>
+    <div id="scanResult" style="margin-top:20px;"></div>
+  </div>
+</div>
+
+<script>
+let selectedCondition = 'any_change';
+let selectedUrl = '';
+let activeMonitorId = null;
+
+const modalOverlay = document.getElementById('modalOverlay');
+document.getElementById('openAddBtn').addEventListener('click', () => {
+  modalOverlay.classList.add('open');
+  showStep('stepUrl');
+});
+document.getElementById('closeModal').addEventListener('click', () => modalOverlay.classList.remove('open'));
+
+function showStep(id) {
+  document.querySelectorAll('.step').forEach(s => s.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+}
+
+document.getElementById('toStepCondition').addEventListener('click', () => {
+  selectedUrl = document.getElementById('urlInput').value.trim();
+  if (!selectedUrl) return;
+  showStep('stepCondition');
+});
+document.getElementById('backToUrl').addEventListener('click', () => showStep('stepUrl'));
+document.getElementById('toStepChannels').addEventListener('click', () => showStep('stepChannels'));
+document.getElementById('backToCondition').addEventListener('click', () => showStep('stepCondition'));
+
+document.querySelectorAll('[data-condition]').forEach(el => {
+  el.addEventListener('click', () => {
+    document.querySelectorAll('[data-condition]').forEach(x => x.classList.remove('selected'));
+    el.classList.add('selected');
+    selectedCondition = el.dataset.condition;
+  });
+});
+
+document.getElementById('startMonitoring').addEventListener('click', async () => {
+  const btn = document.getElementById('startMonitoring');
+  btn.disabled = true;
+  btn.textContent = 'Starting...';
+  try {
+    const res = await fetch('/api/monitors', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url: selectedUrl, condition: selectedCondition, frequency: 'daily', channels: ['email'], slackWebhook: document.getElementById('slackWebhookInput').value.trim() || null }),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      alert(data.error || 'Something went wrong');
+      return;
+    }
+    modalOverlay.classList.remove('open');
+    document.getElementById('urlInput').value = '';
+    await loadMonitors();
+    selectMonitor(data.monitor.id, data.monitor);
+    runCheck(data.monitor.id);
+  } catch (e) {
+    alert('Network error. Try again.');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Start monitoring';
+  }
+});
+
+async function loadMonitors() {
+  const res = await fetch('/api/monitors');
+  const data = await res.json();
+  document.getElementById('capLabel').textContent = `${data.monitors.length}/${data.cap}`;
+  const listEl = document.getElementById('monitorList');
+  if (!data.monitors.length) {
+    listEl.innerHTML = '<div class="empty-left">No pages monitored yet.</div>';
+  } else {
+    listEl.innerHTML = data.monitors.map(m => {
+      const s = m.stats || {};
+      return `
+      <div class="monitor-item ${m.id === activeMonitorId ? 'active' : ''}" onclick="selectMonitor('${m.id}')">
+        <div class="monitor-url">${escapeHtml(m.url)}</div>
+        <div class="monitor-meta">
+          <span><span class="status-dot status-${m.status}"></span>${m.status === 'checking' ? 'Checking...' : 'Active'}</span>
+          <span>${m.condition.replace('_',' ')}</span>
+        </div>
+        <div class="monitor-stats">
+          <span class="chip">Added ${s.addedAt ? timeAgo(s.addedAt) : '–'}</span>
+          <span class="chip ${s.changesLast7Days > 0 ? 'has-changes' : ''}">${s.changesLast7Days || 0} changes / 7d</span>
+          <span class="chip ${s.changesLast30Days > 0 ? 'has-changes' : ''}">${s.changesLast30Days || 0} / 30d</span>
+        </div>
+      </div>
+    `;
+    }).join('');
+  }
+  loadSummaryBar();
+}
+
+async function loadSummaryBar() {
+  const res = await fetch('/api/dashboard-summary');
+  const data = await res.json();
+  document.getElementById('sumMonitors').textContent = data.totalMonitors;
+  document.getElementById('sum7d').textContent = data.changesLast7Days;
+  document.getElementById('sum30d').textContent = data.changesLast30Days;
+}
+
+function timeAgo(isoDate) {
+  const diffMs = Date.now() - new Date(isoDate).getTime();
+  const mins = Math.floor(diffMs / 60000);
+  if (mins < 1) return 'just now';
+  if (mins < 60) return `${mins}m ago`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  if (days < 30) return `${days}d ago`;
+  const months = Math.floor(days / 30);
+  return `${months}mo ago`;
+}
+
+async function selectMonitor(id) {
+  activeMonitorId = id;
+  document.querySelectorAll('.monitor-item').forEach(el => el.classList.remove('active'));
+  loadMonitors();
+  await loadHistory(id);
+}
+
+async function loadHistory(id) {
+  const panel = document.getElementById('panelRight');
+  panel.innerHTML = '<div class="checking-state"><div class="spinner"></div>Loading history...</div>';
+  const res = await fetch(`/api/monitors/${id}/history`);
+  const data = await res.json();
+  if (!res.ok) {
+    panel.innerHTML = `<div class="empty-right">${escapeHtml(data.error || 'Error loading history')}</div>`;
+    return;
+  }
+  renderHistoryPanel(data);
+}
+
+function renderHistoryPanel(data) {
+  const panel = document.getElementById('panelRight');
+  const s = data.stats || {};
+  const pageId = data.monitor.pageId;
+  let html = `
+    <div class="timeline-head">
+      <div>
+        <h2>${escapeHtml(data.monitor.url)}</h2>
+        <div class="sub">Added ${s.addedAt ? timeAgo(s.addedAt) : '–'} · ${data.checksRecorded} check${data.checksRecorded === 1 ? '' : 's'} · ${s.changesLast7Days || 0} changes in last 7 days · condition: ${data.monitor.condition.replace('_',' ')}</div>
+      </div>
+      <button class="run-check-btn" id="runCheckNowBtn">Run check now</button>
+    </div>`;
+
+  html += renderUptimeSection(data.uptime);
+
+  html += `<div class="timeline">`;
+
+  if (!data.diffs.length) {
+    html += `<div class="timeline-entry"><div class="timeline-dot baseline"></div><div class="timeline-time">Initial check</div><div class="timeline-summary" style="color:var(--muted);">Baseline saved. Run another check to start tracking changes.</div></div>`;
+  } else {
+    data.diffs.forEach(({ at, diff, screenshotFile, screenshotDiffFile, screenshotDiffPercent }) => {
+      const hasChanges = diff.hasChanges;
+      const thumb = screenshotFile ? `<img class="entry-thumb" src="/screenshots/${pageId}/${screenshotDiffFile || screenshotFile}" alt="screenshot" onclick="openLightbox('${pageId}', '${screenshotFile}', '${screenshotDiffFile || ''}')" />` : '';
+      html += `<div class="timeline-entry-row">
+        <div class="timeline-entry" style="flex:1;">
+          <div class="timeline-dot ${hasChanges ? 'has-changes' : ''}"></div>
+          <div class="timeline-time">${timeAgo(at)}</div>
+          <div class="timeline-summary">
+            ${hasChanges
+              ? `<span class="badge impact-${diff.impact.level}" style="margin-right:8px;">${diff.impact.level} impact</span>${escapeHtml(summarizeDiffOneLine(diff))}`
+              : `<span style="color:var(--muted);">No changes detected at this check.</span>`}
+            ${screenshotDiffPercent !== null && screenshotDiffPercent !== undefined ? `<span style="color:var(--muted);font-size:12px;margin-left:8px;">· ${screenshotDiffPercent}% visual diff</span>` : ''}
+          </div>`;
+      if (hasChanges) {
+        html += `<div class="timeline-details">`;
+        if (diff.titleChanged) html += `<div class="row"><strong>Title:</strong> <span class="rm">${escapeHtml(diff.titleChanged.from)}</span> → <span class="add">${escapeHtml(diff.titleChanged.to)}</span></div>`;
+        if (diff.contentDiff && diff.contentDiff.changed) {
+          diff.contentDiff.added.forEach(s2 => html += `<div class="row add">+ ${escapeHtml(s2)}</div>`);
+          diff.contentDiff.removed.forEach(s2 => html += `<div class="row rm">− ${escapeHtml(s2)}</div>`);
+        }
+        if (diff.internalLinks.added.length || diff.internalLinks.removed.length) html += `<div class="row"><strong>Internal links:</strong> +${diff.internalLinks.added.length} / −${diff.internalLinks.removed.length}</div>`;
+        if (diff.externalLinks.added.length || diff.externalLinks.removed.length) html += `<div class="row"><strong>External links:</strong> +${diff.externalLinks.added.length} / −${diff.externalLinks.removed.length}</div>`;
+        if (diff.images.added.length || diff.images.removed.length) html += `<div class="row"><strong>Images:</strong> +${diff.images.added.length} / −${diff.images.removed.length}</div>`;
+        html += `</div>`;
+      }
+      html += `</div>${thumb}</div>`;
+    });
+    html += `<div class="timeline-entry"><div class="timeline-dot baseline"></div><div class="timeline-time">${timeAgo(s.addedAt)}</div><div class="timeline-summary" style="color:var(--muted);">Initial check</div></div>`;
+  }
+  html += `</div>`;
+  panel.innerHTML = html;
+  document.getElementById('runCheckNowBtn').addEventListener('click', () => runCheck(activeMonitorId));
+}
+
+function renderUptimeSection(uptime) {
+  if (!uptime) {
+    return `<div class="uptime-grid"><div class="uptime-cell" style="grid-column:1/-1;"><div class="u-label">Uptime</div><div class="u-sub">No uptime data yet — run a check to start tracking.</div></div></div>`;
+  }
+  const d7 = uptime.last7Days || {};
+  const d30 = uptime.last30Days || {};
+  const isUp = uptime.currentStatus === 'up';
+
+  let html = `<div class="uptime-grid">
+    <div class="uptime-cell">
+      <div class="u-label">Current status</div>
+      <div class="status-pill"><span class="dot" style="background:${isUp ? 'var(--added)' : 'var(--removed)'};"></span><span class="u-value ${isUp ? 'up' : 'down'}" style="font-size:16px;">${isUp ? 'Up' : 'Down'}</span></div>
+      <div class="u-sub">Last checked ${timeAgo(uptime.lastCheckedAt)}</div>
+    </div>
+    <div class="uptime-cell">
+      <div class="u-label">Last 7 days</div>
+      <div class="u-value ${d7.uptimePercent === 100 ? 'up' : d7.uptimePercent < 100 ? 'down' : ''}">${d7.uptimePercent ?? '–'}%</div>
+      <div class="u-sub">${d7.incidents || 0} incident${d7.incidents === 1 ? '' : 's'}</div>
+    </div>
+    <div class="uptime-cell">
+      <div class="u-label">Last 30 days</div>
+      <div class="u-value ${d30.uptimePercent === 100 ? 'up' : d30.uptimePercent < 100 ? 'down' : ''}">${d30.uptimePercent ?? '–'}%</div>
+      <div class="u-sub">${d30.incidents || 0} incident${d30.incidents === 1 ? '' : 's'}</div>
+    </div>
+    <div class="uptime-cell">
+      <div class="u-label">Avg response</div>
+      <div class="u-value">${d7.avgResponseMs != null ? d7.avgResponseMs + 'ms' : '–'}</div>
+      <div class="u-sub">${d7.minResponseMs != null ? `${d7.minResponseMs}–${d7.maxResponseMs}ms range` : ''}</div>
+    </div>
+  </div>`;
+
+  if (uptime.responseTimeSeries && uptime.responseTimeSeries.length > 1) {
+    html += `<div class="response-chart">${renderSparkline(uptime.responseTimeSeries)}</div>`;
+  }
+  return html;
+}
+
+function renderSparkline(series) {
+  const w = 600, h = 80, pad = 4;
+  const values = series.map(p => p.responseTimeMs).filter(v => v != null);
+  if (!values.length) return '';
+  const max = Math.max(...values, 1);
+  const min = 0;
+  const stepX = (w - pad * 2) / Math.max(series.length - 1, 1);
+
+  let points = [];
+  let downMarkers = [];
+  series.forEach((p, i) => {
+    const x = pad + i * stepX;
+    if (p.up && p.responseTimeMs != null) {
+      const y = h - pad - ((p.responseTimeMs - min) / (max - min)) * (h - pad * 2);
+      points.push(`${x},${y}`);
+    } else {
+      downMarkers.push(x);
+    }
+  });
+
+  const polyline = points.length > 1 ? `<polyline points="${points.join(' ')}" fill="none" stroke="#1F7A4D" stroke-width="2" />` : '';
+  const downLines = downMarkers.map(x => `<line x1="${x}" y1="0" x2="${x}" y2="${h}" stroke="#B23A34" stroke-width="2" opacity="0.5" />`).join('');
+
+  return `<svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none">${downLines}${polyline}</svg>`;
+}
+
+function openLightbox(pageId, shotFile, diffFile) {
+  const win = window.open('', '_blank');
+  win.document.write(`
+    <title>Screenshot</title>
+    <body style="margin:0;background:#111;display:flex;gap:10px;padding:10px;">
+      <img src="/screenshots/${pageId}/${shotFile}" style="max-width:48%;border:1px solid #333;" />
+      ${diffFile ? `<img src="/screenshots/${pageId}/${diffFile}" style="max-width:48%;border:1px solid #333;" />` : ''}
+    </body>
+  `);
+}
+
+function summarizeDiffOneLine(diff) {
+  const parts = [];
+  if (diff.titleChanged) parts.push('title changed');
+  if (diff.contentDiff && diff.contentDiff.changed) parts.push('content updated');
+  if (diff.internalLinks.added.length || diff.internalLinks.removed.length) parts.push(`${diff.internalLinks.added.length + diff.internalLinks.removed.length} internal link change(s)`);
+  if (diff.externalLinks.added.length || diff.externalLinks.removed.length) parts.push(`${diff.externalLinks.added.length + diff.externalLinks.removed.length} external link change(s)`);
+  if (diff.images.added.length || diff.images.removed.length) parts.push(`${diff.images.added.length + diff.images.removed.length} image change(s)`);
+  return parts.join(', ') || 'Content updated';
+}
+
+async function runCheck(id) {
+  const panel = document.getElementById('panelRight');
+  panel.innerHTML = '<div class="checking-state"><div class="spinner"></div>Check in progress...</div>';
+  try {
+    const res = await fetch(`/api/monitors/${id}/check`, { method: 'POST' });
+    const data = await res.json();
+    if (data.hasChanges) {
+      notifyBrowser(data.diff, data.currentCheckedAt);
+    }
+  } catch (e) {}
+  await loadMonitors();
+  await loadHistory(id);
+}
+
+function notifyBrowser(diff, at) {
+  if (!('Notification' in window) || Notification.permission !== 'granted') return;
+  const level = diff && diff.impact ? diff.impact.level : 'change';
+  new Notification(`Signal: ${level} impact change detected`, {
+    body: diff && diff.impact && diff.impact.reasons.length ? diff.impact.reasons[0] : 'A monitored page changed.',
+    icon: undefined,
+  });
+}
+
+document.getElementById('enableNotifsBtn').addEventListener('click', async () => {
+  if (!('Notification' in window)) {
+    alert('Browser notifications are not supported in this browser.');
+    return;
+  }
+  const perm = await Notification.requestPermission();
+  const btn = document.getElementById('enableNotifsBtn');
+  if (perm === 'granted') {
+    btn.textContent = 'Enabled ✓';
+    btn.disabled = true;
+    new Notification('Signal notifications enabled', { body: "You'll be notified here when a monitored page changes." });
+  } else {
+    btn.textContent = 'Blocked';
+  }
+});
+
+function escapeHtml(s) {
+  return String(s || '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+}
+
+if (document.cookie.includes('uid=demo-user')) {
+  document.getElementById('demoBadge').style.display = 'inline-block';
+}
+loadMonitors();
+loadOverview();
+
+function showOverview() {
+  activeMonitorId = null;
+  document.getElementById('panelRight').innerHTML = '<div id="overviewPanel"></div>';
+  document.querySelectorAll('.monitor-item').forEach(el => el.classList.remove('active'));
+  loadOverview();
+}
+
+async function loadOverview() {
+  const [summaryRes, feedRes, cpdRes] = await Promise.all([
+    fetch('/api/dashboard-summary'),
+    fetch('/api/activity-feed'),
+    fetch('/api/changes-per-day'),
+  ]);
+  const summary = await summaryRes.json();
+  const feed = await feedRes.json();
+  const cpd = await cpdRes.json();
+  renderOverview(summary, feed, cpd);
+}
+
+function renderOverview(summary, feed, cpd) {
+  const el = document.getElementById('overviewPanel');
+  if (!summary.totalMonitors) {
+    el.innerHTML = `<div class="empty-right">Add a page to monitor to see your overview here.</div>`;
+    return;
+  }
+
+  el.innerHTML = `
+    <div class="overview-grid">
+      <div class="overview-card"><div class="ov-label">Pages monitored</div><div class="ov-value">${summary.totalMonitors}</div></div>
+      <div class="overview-card"><div class="ov-label">Changes (7d / 30d)</div><div class="ov-value">${summary.changesLast7Days} / ${summary.changesLast30Days}</div></div>
+      <div class="overview-card"><div class="ov-label">Avg uptime (7d)</div><div class="ov-value">${summary.avgUptimeLast7Days != null ? summary.avgUptimeLast7Days + '%' : '–'}</div></div>
+      <div class="overview-card"><div class="ov-label">Pages down now</div><div class="ov-value ${summary.pagesDown > 0 ? 'alert' : ''}">${summary.pagesDown}</div></div>
+    </div>
+    <div class="chart-card">
+      <h3>Changes detected — last 14 days</h3>
+      <canvas id="changesChart" height="70"></canvas>
+    </div>
+    <div class="activity-card">
+      <h3>Recent activity</h3>
+      <div id="activityList"></div>
+    </div>
+  `;
+
+  const activityList = document.getElementById('activityList');
+  if (!feed.events.length) {
+    activityList.innerHTML = `<div style="color:var(--muted);font-size:13px;">No changes detected yet.</div>`;
+  } else {
+    activityList.innerHTML = feed.events.map(e => {
+      const impactColor = { High: 'var(--removed)', Medium: '#7A5300', Low: '#294B8C', None: 'var(--muted)' }[e.impact] || 'var(--muted)';
+      return `<div class="activity-item">
+        <div>
+          <div class="activity-url">${escapeHtml(e.url)}</div>
+          <div class="activity-summary"><span style="color:${impactColor};font-weight:600;">${e.impact}</span> — ${escapeHtml(e.summary)}</div>
+        </div>
+        <div class="activity-time">${timeAgo(e.at)}</div>
+      </div>`;
+    }).join('');
+  }
+
+  if (window.Chart) {
+    const ctx = document.getElementById('changesChart');
+    if (window._changesChartInstance) window._changesChartInstance.destroy();
+    window._changesChartInstance = new Chart(ctx, {
+      type: 'bar',
+      data: {
+        labels: cpd.labels.map(d => d.slice(5)),
+        datasets: [{ label: 'Changes', data: cpd.values, backgroundColor: '#E8A33D', borderRadius: 4 }],
+      },
+      options: {
+        plugins: { legend: { display: false } },
+        scales: { y: { beginAtZero: true, ticks: { stepSize: 1 } } },
+      },
+    });
+  }
+}
+
+// ---------- Site-wide scan ----------
+const scanModalOverlay = document.getElementById('scanModalOverlay');
+document.getElementById('openScanBtn').addEventListener('click', () => scanModalOverlay.classList.add('open'));
+document.getElementById('closeScanModal').addEventListener('click', () => scanModalOverlay.classList.remove('open'));
+
+document.getElementById('runScanBtn').addEventListener('click', async () => {
+  const url = document.getElementById('scanUrlInput').value.trim();
+  if (!url) return;
+  const btn = document.getElementById('runScanBtn');
+  const resultEl = document.getElementById('scanResult');
+  btn.disabled = true;
+  btn.textContent = 'Scanning... (can take up to a minute)';
+  resultEl.innerHTML = '<div class="checking-state"><div class="spinner"></div>Crawling sitemap and checking outbound links...</div>';
+
+  try {
+    const res = await fetch('/api/site-scan', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url }),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      resultEl.innerHTML = `<div class="row" style="color:var(--removed);">${escapeHtml(data.error || 'Something went wrong')}</div>`;
+      return;
+    }
+    renderScanResult(data);
+  } catch (e) {
+    resultEl.innerHTML = `<div class="row" style="color:var(--removed);">Network error. Try again.</div>`;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Run site-wide scan';
+  }
+});
+
+function renderScanResult(data) {
+  const resultEl = document.getElementById('scanResult');
+  let html = `<div class="row"><strong>${data.totalPagesInSitemap}</strong> pages in sitemap · <strong>${data.pagesScanned.length}</strong> scanned this run · <strong>${data.linksChecked}</strong> outbound links checked</div>`;
+
+  if (data.newPagesFound.length) {
+    html += `<h3 style="font-size:14px;margin:16px 0 6px;">🆕 New pages published (${data.newPagesFound.length})</h3>`;
+    html += `<ul style="font-size:13px;padding-left:18px;max-height:140px;overflow-y:auto;">${data.newPagesFound.slice(0,15).map(u => `<li>${escapeHtml(u)}</li>`).join('')}</ul>`;
+  } else {
+    html += `<div class="row" style="color:var(--muted);margin-top:12px;">No new pages since last scan of this site (or this is the first scan — baseline saved).</div>`;
+  }
+
+  if (data.outreachOpportunities.length) {
+    html += `<h3 style="font-size:14px;margin:16px 0 6px;">🔗 Confirmed broken links — outreach opportunities (${data.outreachOpportunities.length})</h3>`;
+    data.outreachOpportunities.forEach(o => {
+      html += `<div class="diff-card" style="background:#FBE9E8;">
+        <div class="row"><strong>${escapeHtml(o.brokenLink)}</strong> — status ${o.status}</div>
+        <div class="row" style="color:var(--muted);">Anchor: "${escapeHtml(o.anchorText)}" · found on ${o.foundOnPages.length} page(s)</div>
+      </div>`;
+    });
+  } else {
+    html += `<div class="row" style="color:var(--muted);margin-top:12px;">No confirmed broken outbound links found in this scan.</div>`;
+  }
+
+  if (data.ambiguousLinks && data.ambiguousLinks.length) {
+    html += `<div class="row" style="color:var(--muted);margin-top:14px;font-size:12px;">${data.ambiguousLinks.length} link(s) couldn't be reliably verified (bot-blocked or timed out) — not counted as broken.</div>`;
+  }
+
+  resultEl.innerHTML = html;
+}
+</script>
+
+</body>
+</html>

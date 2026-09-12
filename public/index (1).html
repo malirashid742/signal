@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Signal — Track competitor content, links & image changes</title>
+<meta name="description" content="See exactly what a competitor changed: content, internal links, external links, images. Free page checks, no signup.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --ink:#0F172A;
+    --paper:#F7F7F5;
+    --amber:#E8A33D;
+    --added:#1F7A4D;
+    --removed:#B23A34;
+    --muted:#6B7280;
+    --line:#E4E2DC;
+    --text:#1A1D23;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    font-family:'Inter',sans-serif;
+    color:var(--text);
+    background:var(--paper);
+    -webkit-font-smoothing:antialiased;
+  }
+  h1,h2,h3,.display{
+    font-family:'Space Grotesk',sans-serif;
+    letter-spacing:-0.01em;
+  }
+  a{color:inherit;}
+
+  .wrap{max-width:1040px;margin:0 auto;padding:0 24px;}
+
+  nav{display:flex;justify-content:space-between;align-items:center;padding:22px 0;}
+  .logo{font-family:'Space Grotesk';font-weight:700;font-size:20px;color:var(--ink);display:flex;align-items:center;gap:8px;}
+  .logo-mark{width:10px;height:10px;background:var(--amber);border-radius:2px;transform:rotate(45deg);}
+  .nav-links{display:flex;gap:28px;font-size:14px;font-weight:500;color:var(--muted);}
+  .nav-links a:hover{color:var(--ink);}
+
+  .hero{background:var(--ink);color:#fff;padding:64px 0 80px;}
+  .hero-grid{display:grid;grid-template-columns:1.1fr 1fr;gap:56px;align-items:center;}
+  @media(max-width:860px){.hero-grid{grid-template-columns:1fr;}}
+  .hero h1{font-size:42px;line-height:1.12;font-weight:600;margin:0 0 18px;max-width:480px;}
+  .hero p{font-size:17px;line-height:1.6;color:#B6BDCB;max-width:440px;margin:0 0 28px;}
+  .hero-cta{display:inline-flex;align-items:center;gap:10px;background:var(--amber);color:var(--ink);font-weight:600;font-size:15px;padding:13px 22px;border-radius:8px;border:none;cursor:pointer;}
+  .hero-cta:hover{background:#f0ae4d;}
+  .hero-note{font-size:13px;color:#7C8496;margin-top:12px;}
+
+  .diffcard{background:#111827;border:1px solid #2A3345;border-radius:12px;padding:20px 22px;font-size:13px;}
+  .diffcard .filerow{display:flex;justify-content:space-between;font-size:12px;color:#7C8496;margin-bottom:14px;border-bottom:1px solid #2A3345;padding-bottom:10px;}
+  .diffline{padding:5px 10px;border-radius:4px;margin-bottom:4px;font-family:'Inter';line-height:1.5;}
+  .diffline.old{background:rgba(178,58,52,0.14);color:#E19893;text-decoration:line-through;text-decoration-color:rgba(225,152,147,0.6);}
+  .diffline.new{background:rgba(31,122,77,0.16);color:#8FD1AE;}
+  .diffline.meta{color:#7C8496;padding-left:10px;}
+
+  section{padding:64px 0;}
+  .section-head{max-width:520px;margin-bottom:40px;}
+  .section-head h2{font-size:28px;font-weight:600;margin:0 0 10px;color:var(--ink);}
+  .section-head p{color:var(--muted);font-size:15px;line-height:1.6;margin:0;}
+
+  .grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:0;border-top:1px solid var(--line);border-left:1px solid var(--line);}
+  @media(max-width:760px){.grid3{grid-template-columns:1fr;}}
+  .feat{padding:26px 24px;border-right:1px solid var(--line);border-bottom:1px solid var(--line);}
+  .feat .n{font-family:'Space Grotesk';font-weight:700;font-size:13px;color:var(--amber);margin-bottom:10px;}
+  .feat h3{font-size:16px;font-weight:600;margin:0 0 8px;}
+  .feat p{font-size:14px;color:var(--muted);line-height:1.55;margin:0;}
+
+  .tool{background:#fff;border:1px solid var(--line);border-radius:12px;padding:32px;}
+  .tool-row{display:flex;gap:10px;}
+  input[type=text]{flex:1;padding:13px 16px;font-size:15px;font-family:'Inter';border:1px solid #D8D5CC;border-radius:8px;background:var(--paper);}
+  input[type=text]:focus{outline:2px solid var(--ink);outline-offset:1px;}
+  .btn-primary{padding:13px 22px;font-size:15px;font-weight:600;font-family:'Inter';background:var(--ink);color:#fff;border:none;border-radius:8px;cursor:pointer;}
+  .btn-primary:hover{background:#1E293B;}
+  .btn-primary:disabled{background:#A3A9B4;cursor:not-allowed;}
+  .tool-hint{font-size:13px;color:var(--muted);margin-top:10px;}
+
+  #result{margin-top:24px;}
+  .card{border:1px solid var(--line);border-radius:10px;padding:20px 22px;margin-bottom:12px;background:var(--paper);}
+  .badge{display:inline-block;padding:4px 11px;border-radius:20px;font-size:12px;font-weight:600;margin-bottom:12px;}
+  .changed{background:#FCEACB;color:#7A5300;}
+  .nochange{background:#DFF0E6;color:var(--added);}
+  .baseline{background:#E1E8F5;color:#294B8C;}
+  .rowline{font-size:13px;color:var(--muted);margin-bottom:14px;}
+  .diffresult-added{color:var(--added);font-size:13px;font-weight:600;}
+  .diffresult-removed{color:var(--removed);font-size:13px;font-weight:600;}
+  ul.difflist{margin:4px 0 12px;padding-left:18px;font-size:13px;word-break:break-all;color:var(--text);}
+  h4.dt{font-size:14px;margin:16px 0 4px;font-weight:600;}
+  .error-box{color:var(--removed);font-size:14px;padding:14px;background:#FBE9E8;border-radius:8px;}
+
+  footer{border-top:1px solid var(--line);padding:32px 0;font-size:13px;color:var(--muted);}
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <nav>
+    <div class="logo"><span class="logo-mark"></span>Signal</div>
+    <div class="nav-links">
+      <a href="#tool">Check a page</a>
+      <a href="/demo">View demo dashboard →</a>
+      <a href="#features">Features</a>
+    </div>
+  </nav>
+</div>
+
+<div class="hero">
+  <div class="wrap hero-grid">
+    <div>
+      <h1>Know the moment a competitor changes anything.</h1>
+      <p>Content, links, images — plus an SEO Impact Score on every change, exact sentence-level diffs, new-page detection, and a shareable history link. Nobody else does all four.</p>
+      <button class="hero-cta" onclick="document.getElementById('tool').scrollIntoView({behavior:'smooth'})">
+        Check a page free →
+      </button>
+      <div class="hero-note">No signup for your first check. No card required.</div>
+    </div>
+    <div class="diffcard">
+      <div class="filerow"><span>competitor.com/pricing</span><span>2 changes found</span></div>
+      <div class="diffline meta">&lt;title&gt;</div>
+      <div class="diffline old">Acme SEO Services</div>
+      <div class="diffline new">Acme SEO &amp; PPC Services</div>
+      <div class="diffline meta" style="margin-top:10px;">internal links</div>
+      <div class="diffline old">/about</div>
+      <div class="diffline new">/case-studies</div>
+    </div>
+  </div>
+</div>
+
+<div class="wrap">
+  <section id="features">
+    <div class="section-head">
+      <h2>Built for the four things that actually move rankings</h2>
+      <p>Most monitoring tools show you a wall of pixels. Signal isolates the changes that matter for SEO and content strategy.</p>
+    </div>
+    <div class="grid3">
+      <div class="feat"><div class="n">Impact score</div><h3>Not every change matters</h3><p>Every diff gets a 0-100 SEO Impact Score, so you know which changes to act on and which to ignore.</p></div>
+      <div class="feat"><div class="n">Exact wording</div><h3>Real sentence-level diffs</h3><p>See the exact sentences added or removed — not just "content changed." Word-level, like a code diff.</p></div>
+      <div class="feat"><div class="n">New pages</div><h3>Sitemap monitoring</h3><p>Catch new pages a competitor publishes anywhere on their site — not just the ones you're already tracking.</p></div>
+      <div class="feat"><div class="n">Shareable</div><h3>Public change history</h3><p>Every tracked page gets a shareable timeline link — send it to a client or teammate in one click.</p></div>
+    </div>
+  </section>
+
+  <section id="tool">
+    <div class="section-head">
+      <h2>Check a page right now</h2>
+      <p>Paste a URL below. First check saves a baseline — run it again anytime to see the diff.</p>
+    </div>
+    <div class="tool">
+      <div class="tool-row">
+        <input type="text" id="urlInput" placeholder="https://competitor.com/pricing" />
+        <button class="btn-primary" id="checkBtn">Check page</button>
+      </div>
+      <div class="tool-hint">Free, no signup. Works best on standard HTML pages (not heavy JS apps) in this MVP.</div>
+      <div id="result"></div>
+      <div id="subscribeBox" style="display:none;margin-top:20px;padding-top:20px;border-top:1px solid var(--line);">
+        <h4 class="dt" style="margin-top:0;">Get emailed when this page changes again</h4>
+        <div class="tool-row">
+          <input type="text" id="emailInput" placeholder="you@company.com" />
+          <button class="btn-primary" id="subscribeBtn">Notify me</button>
+        </div>
+        <div id="subscribeMsg" class="tool-hint"></div>
+      </div>
+    </div>
+  </section>
+</div>
+
+<footer>
+  <div class="wrap">Signal — a focused competitor change tracker for SEOs and content teams.</div>
+</footer>
+
+<script>
+const btn = document.getElementById('checkBtn');
+const input = document.getElementById('urlInput');
+const resultEl = document.getElementById('result');
+const subscribeBox = document.getElementById('subscribeBox');
+const subscribeBtn = document.getElementById('subscribeBtn');
+const emailInput = document.getElementById('emailInput');
+const subscribeMsg = document.getElementById('subscribeMsg');
+
+btn.addEventListener('click', runCheck);
+input.addEventListener('keydown', (e) => { if (e.key === 'Enter') runCheck(); });
+
+subscribeBtn.addEventListener('click', async () => {
+  const email = emailInput.value.trim();
+  const url = input.value.trim();
+  if (!email || !url) return;
+  subscribeBtn.disabled = true;
+  subscribeBtn.textContent = 'Saving...';
+  try {
+    const res = await fetch('/api/subscribe', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, url }),
+    });
+    const data = await res.json();
+    subscribeMsg.textContent = res.ok ? data.message : (data.error || 'Something went wrong');
+    if (res.ok) emailInput.value = '';
+  } catch (e) {
+    subscribeMsg.textContent = 'Network error. Try again.';
+  } finally {
+    subscribeBtn.disabled = false;
+    subscribeBtn.textContent = 'Notify me';
+  }
+});
+
+async function runCheck() {
+  const url = input.value.trim();
+  if (!url) return;
+  btn.disabled = true;
+  btn.textContent = 'Checking…';
+  resultEl.innerHTML = '';
+
+  try {
+    const res = await fetch('/api/check', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url }),
+    });
+    const data = await res.json();
+
+    if (!res.ok) {
+      resultEl.innerHTML = `<div class="error-box">${escapeHtml(data.error || 'Something went wrong')}</div>`;
+      return;
+    }
+
+    if (data.mode === 'baseline') {
+      resultEl.innerHTML = `
+        <div class="card">
+          <span class="badge baseline">Baseline saved</span>
+          <p style="font-size:14px;margin:0 0 12px;">${escapeHtml(data.message)}</p>
+          <ul class="difflist">
+            <li>Title: ${escapeHtml(data.snapshot.title)}</li>
+            <li>Word count: ${data.snapshot.wordCount}</li>
+            <li>Internal links: ${data.snapshot.internalLinks} · External links: ${data.snapshot.externalLinks}</li>
+            <li>Images: ${data.snapshot.images}</li>
+          </ul>
+        </div>`;
+    } else {
+      const d = data.diff;
+      const impactColor = { High: '#B23A34', Medium: '#7A5300', Low: '#294B8C', None: '#6B7280' }[d.impact.level];
+      let html = `<div class="card"><span class="badge ${d.hasChanges ? 'changed' : 'nochange'}">${d.hasChanges ? 'Changes detected' : 'No changes since last check'}</span>`;
+      if (d.hasChanges) {
+        html += `<span class="badge" style="background:${impactColor}22;color:${impactColor};margin-left:8px;">SEO Impact: ${d.impact.level} (${d.impact.score}/100)</span>`;
+      }
+      html += `<div class="rowline">Last checked ${data.lastCheckedAt} → now ${data.currentCheckedAt}</div>`;
+
+      if (d.impact.reasons.length) {
+        html += `<ul class="difflist" style="margin-bottom:16px;">${d.impact.reasons.map(r => `<li>${escapeHtml(r)}</li>`).join('')}</ul>`;
+      }
+
+      if (d.titleChanged) html += `<h4 class="dt">Title</h4><div class="diffresult-removed">− ${escapeHtml(d.titleChanged.from)}</div><div class="diffresult-added">+ ${escapeHtml(d.titleChanged.to)}</div>`;
+      if (d.metaDescChanged) html += `<h4 class="dt">Meta description</h4><div class="diffresult-removed">− ${escapeHtml(d.metaDescChanged.from)}</div><div class="diffresult-added">+ ${escapeHtml(d.metaDescChanged.to)}</div>`;
+      if (d.contentDiff && d.contentDiff.changed) {
+        html += `<h4 class="dt">Body content — exact changes</h4>`;
+        d.contentDiff.added.forEach(s => html += `<div class="diffresult-added" style="font-weight:400;">+ ${escapeHtml(s)}</div>`);
+        d.contentDiff.removed.forEach(s => html += `<div class="diffresult-removed" style="font-weight:400;">− ${escapeHtml(s)}</div>`);
+      }
+      html += listBlock('H1 tags', d.h1);
+      html += listBlock('H2 tags', d.h2);
+      html += listBlock('Internal links', d.internalLinks);
+      html += listBlock('External links', d.externalLinks);
+      html += listBlock('Images', d.images);
+      if (d.schemaChanged) html += listBlock('Schema markup', d.schema);
+
+      if (data.sitemap && data.sitemap.mode === 'diff' && (data.sitemap.newPages.length || data.sitemap.removedPages.length)) {
+        html += `<h4 class="dt">Sitemap — new/removed pages (${data.sitemap.totalPages} total)</h4>`;
+        if (data.sitemap.newPages.length) html += `<div class="diffresult-added">+ New pages (${data.sitemap.newPages.length})</div><ul class="difflist">${data.sitemap.newPages.slice(0,10).map(u => `<li>${escapeHtml(u)}</li>`).join('')}</ul>`;
+        if (data.sitemap.removedPages.length) html += `<div class="diffresult-removed">− Removed pages (${data.sitemap.removedPages.length})</div><ul class="difflist">${data.sitemap.removedPages.slice(0,10).map(u => `<li>${escapeHtml(u)}</li>`).join('')}</ul>`;
+      }
+
+      if (data.velocity) {
+        html += `<div class="card" style="background:#fff;margin-top:14px;"><strong>Publishing velocity:</strong> ${data.velocity.pagesPerWeek} new pages/week (${data.velocity.currentTotalPages} total pages, tracked over ${data.velocity.daysTracked} days)</div>`;
+      }
+
+      if (data.outreach && data.outreach.length) {
+        html += `<div class="card" style="background:#FCEACB33;margin-top:14px;"><strong>🔗 Outreach opportunities (${data.outreach.length}):</strong>`;
+        data.outreach.forEach(o => {
+          html += `<div class="row" style="margin-top:8px;font-size:13px;">Removed link to <strong>${escapeHtml(o.removedLink)}</strong> (was anchored "${escapeHtml(o.anchorText)}") — ${escapeHtml(o.suggestion)}</div>`;
+        });
+        html += `</div>`;
+      }
+
+      html += `<div style="margin-top:16px;"><a href="/page/${data.pageId}" target="_blank" style="font-size:13px;color:var(--ink);text-decoration:underline;">View full public change history →</a></div>`;
+      html += `</div>`;
+      resultEl.innerHTML = html;
+    }
+    subscribeBox.style.display = 'block';
+  } catch (e) {
+    resultEl.innerHTML = `<div class="error-box">Network error. Try again.</div>`;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Check page';
+  }
+}
+
+function listBlock(title, obj) {
+  if (!obj || (!obj.added.length && !obj.removed.length)) return '';
+  let html = `<h4 class="dt">${title}</h4>`;
+  if (obj.added.length) html += `<div class="diffresult-added">+ Added (${obj.added.length})</div><ul class="difflist">${obj.added.map(x => `<li>${escapeHtml(x)}</li>`).join('')}</ul>`;
+  if (obj.removed.length) html += `<div class="diffresult-removed">− Removed (${obj.removed.length})</div><ul class="difflist">${obj.removed.map(x => `<li>${escapeHtml(x)}</li>`).join('')}</ul>`;
+  return html;
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+}
+</script>
+
+</body>
+</html>
