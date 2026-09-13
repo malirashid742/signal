@@ -211,6 +211,47 @@ function saveMonitors(uid, monitors) {
   fs.writeFileSync(monitorsFile(uid), JSON.stringify(monitors, null, 2));
 }
 
+// ---------- PROFILE (name, email, timezone — saved per uid) ----------
+const PROFILES_DIR = path.join(DATA_DIR, "profiles");
+if (!fs.existsSync(PROFILES_DIR)) fs.mkdirSync(PROFILES_DIR, { recursive: true });
+
+function profileFile(uid) {
+  return path.join(PROFILES_DIR, `${uid}.json`);
+}
+function loadProfile(uid) {
+  const f = profileFile(uid);
+  if (!fs.existsSync(f)) return { firstName: "", lastName: "", email: "", timezone: "UTC", plan: "Free", useCase: null };
+  return JSON.parse(fs.readFileSync(f, "utf8"));
+}
+function saveProfile(uid, profile) {
+  fs.writeFileSync(profileFile(uid), JSON.stringify(profile, null, 2));
+}
+
+// GET /api/profile
+app.get("/api/profile", (req, res) => {
+  res.json(loadProfile(req.uid));
+});
+
+// POST /api/profile — body: { firstName, lastName, email, timezone, useCase }
+// useCase: "myself" | "clients" | "company" — set once during onboarding
+app.post("/api/profile", (req, res) => {
+  const { firstName, lastName, email, timezone, useCase } = req.body;
+  if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    return res.status(400).json({ error: "Invalid email address." });
+  }
+  const existing = loadProfile(req.uid);
+  const profile = {
+    ...existing,
+    firstName: firstName ?? existing.firstName,
+    lastName: lastName ?? existing.lastName,
+    email: email ?? existing.email,
+    timezone: timezone ?? existing.timezone,
+    useCase: useCase ?? existing.useCase,
+  };
+  saveProfile(req.uid, profile);
+  res.json({ ok: true, profile });
+});
+
 const FREE_MONITOR_CAP = 3;
 
 // Computes "how many changes in the last N days" for a monitor, plus total checks —
@@ -777,6 +818,26 @@ app.post("/api/subscribe", (req, res) => {
     saveSubs(subs);
   }
   res.json({ ok: true, message: "You'll get an email when this page changes." });
+});
+
+// POST /api/contact — stores contact form submissions to a file (simple, free).
+// Upgrade path: send yourself an email per submission via the same Gmail SMTP
+// setup used for alerts, once GMAIL_USER/GMAIL_APP_PASSWORD are configured.
+const CONTACT_FILE = path.join(DATA_DIR, "contact-messages.json");
+app.post("/api/contact", (req, res) => {
+  const { name, email, message } = req.body;
+  if (!name || !name.trim()) return res.status(400).json({ error: "Name is required." });
+  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return res.status(400).json({ error: "Provide a valid email address." });
+  if (!message || !message.trim()) return res.status(400).json({ error: "Message is required." });
+
+  let messages = [];
+  if (fs.existsSync(CONTACT_FILE)) {
+    try { messages = JSON.parse(fs.readFileSync(CONTACT_FILE, "utf8")); } catch (e) { messages = []; }
+  }
+  messages.push({ name: name.trim(), email: email.trim(), message: message.trim(), receivedAt: new Date().toISOString() });
+  fs.writeFileSync(CONTACT_FILE, JSON.stringify(messages, null, 2));
+
+  res.json({ ok: true });
 });
 
 function summarize(snap) {
