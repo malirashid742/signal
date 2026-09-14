@@ -11,6 +11,19 @@ const { captureScreenshot, compareScreenshots } = require("./screenshot");
 
 const app = express();
 app.use(express.json());
+const rateLimit = require("express-rate-limit");
+
+// Public tools (free check, site-scan) get rate limited by IP — prevents one
+// visitor from hammering the server or racking up unbounded screenshot/browser
+// launches on the free hosting tier. Logged-in dashboard actions are not
+// limited here since they're already capped by FREE_MONITOR_CAP.
+const publicToolLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 20, // 20 checks per IP per 15 min — generous for real use, blocks scripted abuse
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Too many checks from this IP. Try again in a few minutes." },
+});
 app.use(cookieParser());
 app.use(express.static(path.join(__dirname, "public")));
 
@@ -504,7 +517,7 @@ app.get("/api/changes-per-day", (req, res) => {
 const MAX_PAGES_PER_SCAN = 12;   // cap to keep free-tier runtime/cost sane
 const MAX_LINKS_TO_CHECK = 40;   // cap outbound link checks per scan
 
-app.post("/api/site-scan", async (req, res) => {
+app.post("/api/site-scan", publicToolLimiter, async (req, res) => {
   const { url } = req.body;
   if (!url || !/^https?:\/\//.test(url)) {
     return res.status(400).json({ error: "Provide a valid URL (any page on the site — we'll find its sitemap)." });
@@ -583,7 +596,7 @@ app.post("/api/site-scan", async (req, res) => {
 });
 
 
-app.post("/api/check", async (req, res) => {
+app.post("/api/check", publicToolLimiter, async (req, res) => {
   const { url } = req.body;
   if (!url || !/^https?:\/\//.test(url)) {
     return res.status(400).json({ error: "Provide a valid URL starting with http:// or https://" });
