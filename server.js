@@ -865,5 +865,25 @@ function summarize(snap) {
   };
 }
 
+// Cheap, dependency-free health check for the host's port scan / health probe.
+// Must not touch disk or the browser so it always answers fast.
+app.get("/healthz", (req, res) => res.status(200).json({ ok: true, uptime: process.uptime() }));
+
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`Running on http://localhost:${PORT}`));
+// Bind 0.0.0.0 explicitly — hosts route external traffic to the container's
+// public interface, and binding only to localhost makes the port scan fail.
+const server = app.listen(PORT, "0.0.0.0", () => console.log(`Running on port ${PORT}`));
+
+// Without these the process can be SIGKILLed mid-deploy and the platform reports
+// a failed deploy rather than a clean restart.
+function shutdown(signal) {
+  console.log(`${signal} received — shutting down`);
+  server.close(() => process.exit(0));
+  setTimeout(() => process.exit(0), 10000).unref();
+}
+process.on("SIGTERM", () => shutdown("SIGTERM"));
+process.on("SIGINT", () => shutdown("SIGINT"));
+
+// Log instead of dying silently — an unhandled rejection in Node 22 terminates the
+// process by default, which on a host looks like an unexplained failed deploy.
+process.on("unhandledRejection", (err) => console.error("Unhandled rejection:", err));

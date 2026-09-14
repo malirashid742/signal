@@ -1,4 +1,9 @@
-const sharp = require("sharp");
+// sharp is loaded lazily — see sharecard.js for the reasoning.
+let sharpModule;
+function getSharp() {
+  if (!sharpModule) sharpModule = require("sharp");
+  return sharpModule;
+}
 
 // Renders a mock webpage screenshot (browser chrome + colored content blocks) for
 // demo/seed data — visually plausible without needing a real page navigation.
@@ -39,7 +44,7 @@ async function renderMockPageScreenshot({ title, accentColor = "#2563EB", varian
     ${rects}
   </svg>`;
 
-  return sharp(Buffer.from(svg)).png().toBuffer();
+  return getSharp()(Buffer.from(svg)).png().toBuffer();
 }
 
 function escapeXml(s) {

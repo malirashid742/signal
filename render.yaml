@@ -1,0 +1,21 @@
+services:
+  - type: web
+    name: signal
+    runtime: node
+    plan: free
+    region: oregon
+    buildCommand: npm ci --omit=dev
+    startCommand: npm start
+    healthCheckPath: /healthz
+    autoDeploy: true
+    envVars:
+      - key: NODE_VERSION
+        value: 22.22.0
+      # A headless Chromium needs ~400MB of RAM. The free instance has 512MB, so
+      # visual screenshot diffing is off by default — leaving it on OOM-kills the
+      # whole service the first time a scan runs. Set this to 0 (and move to a
+      # paid instance) to turn visual diffs back on.
+      - key: DISABLE_SCREENSHOTS
+        value: "1"
+      - key: NODE_OPTIONS
+        value: --max-old-space-size=460
