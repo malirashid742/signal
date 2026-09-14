@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sign up — Signal</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --ink:#0F172A; --paper:#F7F7F5; --amber:#E8A33D;
+    --muted:#6B7280; --line:#E4E2DC; --text:#1A1D23; --removed:#B23A34;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;font-family:'Inter',sans-serif;color:var(--text);background:var(--paper);min-height:100vh;display:flex;align-items:center;justify-content:center;animation:fadeIn 0.3s ease;}
+  h1{font-family:'Space Grotesk',sans-serif;}
+  @keyframes fadeIn{from{opacity:0;}to{opacity:1;}}
+
+  .wrap{max-width:400px;width:100%;padding:20px;}
+  .logo{font-family:'Space Grotesk';font-weight:700;font-size:20px;display:flex;align-items:center;gap:8px;margin-bottom:32px;justify-content:center;}
+  .logo-mark{width:10px;height:10px;background:var(--amber);border-radius:2px;transform:rotate(45deg);}
+
+  .card{background:#fff;border:1px solid var(--line);border-radius:12px;padding:32px;}
+  h1{font-size:22px;margin:0 0 6px;text-align:center;}
+  .sub{color:var(--muted);font-size:14px;margin:0 0 24px;text-align:center;}
+
+  label{display:block;font-size:12px;color:var(--muted);margin-bottom:5px;margin-top:14px;}
+  label:first-of-type{margin-top:0;}
+  input[type=text],input[type=email]{width:100%;padding:11px 14px;font-size:14px;border:1px solid #D8D5CC;border-radius:8px;background:var(--paper);transition:border-color 0.15s;}
+  input:focus{outline:none;border-color:var(--ink);}
+  .row2{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
+
+  .btn-primary{width:100%;margin-top:20px;padding:12px;background:var(--ink);color:#fff;border:none;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;transition:background 0.15s;}
+  .btn-primary:hover{background:#1E293B;}
+  .btn-primary:disabled{background:#A3A9B4;cursor:not-allowed;}
+
+  .error-msg{font-size:13px;color:var(--removed);margin-top:10px;display:none;}
+  .footer-note{text-align:center;font-size:12px;color:var(--muted);margin-top:16px;}
+  .footer-note a{color:var(--ink);}
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <div class="logo"><span class="logo-mark"></span>Signal</div>
+  <div class="card">
+    <h1>Create your account</h1>
+    <p class="sub">Free forever for up to 3 pages. No card required.</p>
+
+    <div class="row2">
+      <div>
+        <label>First name</label>
+        <input type="text" id="firstName" placeholder="Muhammad" />
+      </div>
+      <div>
+        <label>Last name</label>
+        <input type="text" id="lastName" placeholder="Ali" />
+      </div>
+    </div>
+
+    <label>Email address</label>
+    <input type="email" id="email" placeholder="you@company.com" />
+
+    <button class="btn-primary" id="signupBtn">Create account</button>
+    <div class="error-msg" id="errorMsg"></div>
+
+    <div class="footer-note">Already have an account? <a href="/dashboard.html">Go to dashboard</a></div>
+  </div>
+</div>
+
+<script>
+document.getElementById('signupBtn').addEventListener('click', async () => {
+  const firstName = document.getElementById('firstName').value.trim();
+  const lastName = document.getElementById('lastName').value.trim();
+  const email = document.getElementById('email').value.trim();
+  const errorMsg = document.getElementById('errorMsg');
+  const btn = document.getElementById('signupBtn');
+
+  if (!firstName || !email) {
+    errorMsg.textContent = 'First name and email are required.';
+    errorMsg.style.display = 'block';
+    return;
+  }
+
+  btn.disabled = true;
+  btn.textContent = 'Creating account...';
+  errorMsg.style.display = 'none';
+
+  try {
+    const res = await fetch('/api/profile', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ firstName, lastName, email }),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      errorMsg.textContent = data.error || 'Something went wrong.';
+      errorMsg.style.display = 'block';
+      return;
+    }
+    // New account → straight into the use-case onboarding step, then dashboard.
+    window.location.href = '/onboarding.html';
+  } catch (e) {
+    errorMsg.textContent = 'Network error. Try again.';
+    errorMsg.style.display = 'block';
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Create account';
+  }
+});
+</script>
+
+</body>
+</html>

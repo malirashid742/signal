@@ -96,16 +96,7 @@
 </head>
 <body>
 
-<div class="wrap">
-  <nav>
-    <div class="logo"><span class="logo-mark"></span>Signal</div>
-    <div class="nav-links">
-      <a href="#tool">Check a page</a>
-      <a href="/demo">View demo dashboard →</a>
-      <a href="#features">Features</a>
-    </div>
-  </nav>
-</div>
+<div id="sg-header-mount"></div>
 
 <div class="hero">
   <div class="wrap hero-grid">
@@ -163,15 +154,19 @@
         </div>
         <div id="subscribeMsg" class="tool-hint"></div>
       </div>
+      <div id="signupNudge" style="display:none;margin-top:16px;padding:14px 16px;background:#FFFBF3;border:1px solid #F0D9A8;border-radius:8px;font-size:13px;">
+        Want to track more pages with screenshots, uptime, and a full dashboard? <a href="/signup.html" style="color:var(--ink);font-weight:600;">Create a free account →</a>
+      </div>
     </div>
   </section>
 </div>
 
-<footer>
-  <div class="wrap">Signal — a focused competitor change tracker for SEOs and content teams.</div>
-</footer>
+<div id="sg-footer-mount"></div>
+
+<script src="/shared-nav.js"></script>
 
 <script>
+
 const btn = document.getElementById('checkBtn');
 const input = document.getElementById('urlInput');
 const resultEl = document.getElementById('result');
@@ -288,6 +283,7 @@ async function runCheck() {
       resultEl.innerHTML = html;
     }
     subscribeBox.style.display = 'block';
+    document.getElementById('signupNudge').style.display = 'block';
   } catch (e) {
     resultEl.innerHTML = `<div class="error-box">Network error. Try again.</div>`;
   } finally {

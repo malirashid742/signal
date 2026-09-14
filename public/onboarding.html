@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Get started — Signal</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --ink:#0F172A; --paper:#F7F7F5; --amber:#E8A33D;
+    --added:#1F7A4D; --muted:#6B7280; --line:#E4E2DC; --text:#1A1D23;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;font-family:'Inter',sans-serif;color:var(--text);background:var(--paper);min-height:100vh;display:flex;align-items:center;justify-content:center;animation:fadeIn 0.3s ease;}
+  h1{font-family:'Space Grotesk',sans-serif;}
+  @keyframes fadeIn{from{opacity:0;}to{opacity:1;}}
+  @keyframes fadeInUp{from{opacity:0;transform:translateY(10px);}to{opacity:1;transform:translateY(0);}}
+
+  .wrap{max-width:480px;width:100%;padding:20px;}
+  .logo{font-family:'Space Grotesk';font-weight:700;font-size:20px;display:flex;align-items:center;gap:8px;margin-bottom:36px;}
+  .logo-mark{width:10px;height:10px;background:var(--amber);border-radius:2px;transform:rotate(45deg);}
+
+  h1{font-size:28px;margin:0 0 8px;}
+  .sub{color:var(--muted);font-size:15px;margin:0 0 28px;}
+
+  .option{display:flex;align-items:center;gap:14px;padding:18px 20px;border:1.5px solid var(--line);border-radius:10px;margin-bottom:12px;cursor:pointer;background:#fff;transition:border-color 0.15s,transform 0.1s;animation:fadeInUp 0.3s ease backwards;}
+  .option:nth-child(1){animation-delay:0.05s;}
+  .option:nth-child(2){animation-delay:0.1s;}
+  .option:nth-child(3){animation-delay:0.15s;}
+  .option:hover{border-color:var(--ink);transform:translateX(2px);}
+  .option.selected{border-color:var(--amber);background:#FFFBF3;}
+  .option-icon{font-size:22px;}
+  .option-text{font-size:15px;font-weight:600;}
+  .option-sub{font-size:12px;color:var(--muted);margin-top:2px;}
+
+  .btn-primary{width:100%;margin-top:20px;padding:13px;background:var(--ink);color:#fff;border:none;border-radius:8px;font-size:15px;font-weight:600;cursor:pointer;transition:background 0.15s,opacity 0.15s;}
+  .btn-primary:hover{background:#1E293B;}
+  .btn-primary:disabled{background:#D8D5CC;color:#A3A9B4;cursor:not-allowed;}
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <div class="logo"><span class="logo-mark"></span>Signal</div>
+  <h1>Who will you be monitoring for?</h1>
+  <p class="sub">This helps us tailor which features we show first.</p>
+
+  <div class="option" data-value="myself" onclick="select(this)">
+    <span class="option-icon">👤</span>
+    <div>
+      <div class="option-text">Myself</div>
+      <div class="option-sub">Tracking competitors for my own project or business</div>
+    </div>
+  </div>
+
+  <div class="option" data-value="clients" onclick="select(this)">
+    <span class="option-icon">👥</span>
+    <div>
+      <div class="option-text">My clients</div>
+      <div class="option-sub">I run an agency and track competitors for multiple clients</div>
+    </div>
+  </div>
+
+  <div class="option" data-value="company" onclick="select(this)">
+    <span class="option-icon">🏢</span>
+    <div>
+      <div class="option-text">My company</div>
+      <div class="option-sub">Tracking on behalf of a team or in-house marketing group</div>
+    </div>
+  </div>
+
+  <button class="btn-primary" id="continueBtn" disabled onclick="continueOnboarding()">Continue</button>
+</div>
+
+<script>
+let selected = null;
+
+function select(el) {
+  document.querySelectorAll('.option').forEach(o => o.classList.remove('selected'));
+  el.classList.add('selected');
+  selected = el.dataset.value;
+  document.getElementById('continueBtn').disabled = false;
+}
+
+async function continueOnboarding() {
+  const btn = document.getElementById('continueBtn');
+  btn.disabled = true;
+  btn.textContent = 'Saving...';
+  try {
+    await fetch('/api/profile', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ useCase: selected }),
+    });
+  } catch (e) {}
+  window.location.href = '/dashboard.html';
+}
+</script>
+
+</body>
+</html>

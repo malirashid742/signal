@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Subscriptions — Signal</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --ink:#0F172A; --paper:#F7F7F5; --amber:#E8A33D;
+    --added:#1F7A4D; --removed:#B23A34; --muted:#6B7280; --line:#E4E2DC; --text:#1A1D23;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;font-family:'Inter',sans-serif;color:var(--text);background:var(--paper);animation:fadeIn 0.3s ease;}
+  h1,h2,h3{font-family:'Space Grotesk',sans-serif;}
+  @keyframes fadeIn{from{opacity:0;}to{opacity:1;}}
+
+  header{background:var(--ink);color:#fff;padding:16px 28px;display:flex;justify-content:space-between;align-items:center;}
+  .logo{font-family:'Space Grotesk';font-weight:700;font-size:18px;display:flex;align-items:center;gap:8px;}
+  .logo-mark{width:9px;height:9px;background:var(--amber);border-radius:2px;transform:rotate(45deg);}
+  .back-link{color:#B6BDCB;font-size:13px;text-decoration:none;transition:color 0.15s;}
+  .back-link:hover{color:#fff;}
+
+  .layout{display:flex;max-width:1200px;margin:0 auto;}
+  .sidebar{width:200px;padding:28px 16px;flex-shrink:0;}
+  .sidebar a{display:block;padding:9px 12px;font-size:13px;color:var(--muted);text-decoration:none;border-radius:6px;margin-bottom:2px;transition:background 0.15s,color 0.15s;}
+  .sidebar a:hover{background:#fff;color:var(--ink);}
+  .sidebar a.active{background:#fff;color:var(--ink);font-weight:600;}
+
+  .main{flex:1;padding:28px 20px;}
+  .toggle-row{display:flex;justify-content:flex-end;align-items:center;gap:10px;margin-bottom:24px;font-size:14px;}
+  .switch{width:40px;height:22px;background:var(--ink);border-radius:12px;position:relative;cursor:pointer;}
+  .switch::after{content:'';position:absolute;width:18px;height:18px;background:#fff;border-radius:50%;top:2px;left:2px;transition:left 0.2s;}
+  .switch.annual::after{left:20px;}
+  .save-badge{background:#DFF0E6;color:var(--added);font-size:11px;padding:3px 9px;border-radius:10px;font-weight:600;}
+
+  .banner{display:flex;justify-content:space-between;align-items:center;background:#FFFBF3;border:1px solid #F0D9A8;border-radius:10px;padding:14px 20px;margin-bottom:24px;font-size:13px;animation:fadeInUp 0.3s ease;}
+  @keyframes fadeInUp{from{opacity:0;transform:translateY(6px);}to{opacity:1;transform:translateY(0);}}
+  .banner-badge{color:var(--added);font-weight:600;}
+
+  .plans-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;}
+  @media(max-width:900px){.plans-grid{grid-template-columns:repeat(2,1fr);}}
+  .plan-card{background:#fff;border:1px solid var(--line);border-radius:12px;padding:22px;transition:transform 0.2s,box-shadow 0.2s;animation:fadeInUp 0.35s ease;}
+  .plan-card:hover{transform:translateY(-3px);box-shadow:0 8px 24px rgba(15,23,42,0.08);}
+  .plan-card.featured{background:var(--ink);color:#fff;border-color:var(--ink);}
+  .plan-name{font-size:16px;font-weight:600;margin-bottom:4px;}
+  .plan-old-price{font-size:12px;color:var(--muted);text-decoration:line-through;}
+  .plan-card.featured .plan-old-price{color:#7C8496;}
+  .plan-price{font-family:'Space Grotesk';font-size:32px;font-weight:700;margin:6px 0 2px;}
+  .plan-price span{font-size:14px;font-weight:500;color:var(--muted);}
+  .plan-card.featured .plan-price span{color:#B6BDCB;}
+  .plan-discount{font-size:11px;color:var(--added);font-weight:600;margin-bottom:16px;}
+  .plan-card.featured .plan-discount{color:#8FD1AE;}
+
+  .plan-feature{font-size:13px;color:var(--muted);margin-bottom:10px;}
+  .plan-card.featured .plan-feature{color:#B6BDCB;}
+  .plan-feature strong{display:block;color:var(--text);font-size:14px;}
+  .plan-card.featured .plan-feature strong{color:#fff;}
+
+  .plan-list{list-style:none;padding:0;margin:16px 0 0;font-size:13px;}
+  .plan-list li{display:flex;align-items:center;gap:8px;margin-bottom:8px;color:var(--text);}
+  .plan-card.featured .plan-list li{color:#fff;}
+  .checkmark{color:var(--added);font-weight:700;}
+  .plan-card.featured .checkmark{color:var(--amber);}
+
+  .btn-plan{width:100%;margin-top:18px;padding:11px;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;border:1px solid var(--ink);background:#fff;color:var(--ink);transition:background 0.15s,transform 0.1s;}
+  .btn-plan:hover{background:var(--paper);}
+  .btn-plan:active{transform:scale(0.98);}
+  .btn-plan.filled{background:var(--amber);color:var(--ink);border:none;}
+  .btn-plan.filled:hover{background:#f0ae4d;}
+  .btn-plan.current{background:#EEE;color:var(--muted);cursor:default;border:none;}
+
+  .compare-section{margin-top:48px;}
+  .compare-section h2{font-size:22px;margin:0 0 6px;}
+  .compare-sub{color:var(--muted);font-size:14px;margin:0 0 20px;}
+  .compare-table-wrap{overflow-x:auto;border:1px solid var(--line);border-radius:10px;background:#fff;}
+  .compare-table{width:100%;border-collapse:collapse;font-size:13px;min-width:640px;}
+  .compare-table th{text-align:left;padding:14px 16px;font-weight:600;color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:0.02em;border-bottom:1px solid var(--line);background:var(--paper);}
+  .compare-table th:first-child{position:sticky;left:0;background:var(--paper);}
+  .compare-table td{padding:12px 16px;border-bottom:1px solid var(--line);}
+  .compare-table td:first-child{color:var(--text);font-weight:500;position:sticky;left:0;background:#fff;}
+  .compare-table tr:last-child td{border-bottom:none;}
+  .compare-table tr:hover td{background:#FAFAF8;}
+  .compare-table tr:hover td:first-child{background:#FAFAF8;}
+  .yes{color:var(--added);font-weight:700;}
+  .no{color:#D1918D;}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo"><span class="logo-mark"></span>Signal</div>
+  <a href="/dashboard.html" class="back-link">← Back to dashboard</a>
+</header>
+
+<div class="layout">
+  <div class="sidebar">
+    <a href="/subscription.html" class="active">Subscriptions</a>
+    <a href="/billing.html">Billing</a>
+    <a href="/profile.html">Profile</a>
+  </div>
+
+  <div class="main">
+    <div class="banner">
+      <span><strong>60% cheaper than comparable Visualping plans</strong> — same core monitoring, less markup.</span>
+      <span class="banner-badge">✓ No credit card required for Free</span>
+    </div>
+
+    <div class="toggle-row">
+      <span>Monthly</span>
+      <div class="switch" id="billingToggle" onclick="toggleBilling()"></div>
+      <span>Annual</span>
+      <span class="save-badge">Save 20%</span>
+    </div>
+
+    <div class="plans-grid" id="plansGrid"></div>
+
+    <div class="compare-section">
+      <h2>Compare plans</h2>
+      <p class="compare-sub">Choose the plan that fits your monitoring needs.</p>
+      <div class="compare-table-wrap">
+        <table class="compare-table" id="compareTable"></table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const PLANS = [
+  {
+    name: 'Free', monthly: 0, annual: 0,
+    pages: '3 pages', frequency: 'Daily checks',
+    features: ['Email alerts', 'SEO Impact Score', 'Screenshot diffs'],
+    cta: 'Current plan', style: 'current',
+  },
+  {
+    name: 'Starter', monthly: 4, annual: 38, competitorMonthly: 10,
+    pages: '10 pages', frequency: 'Daily checks',
+    features: ['Everything in Free', 'Slack alerts', 'Priority checks'],
+    cta: 'Upgrade', style: 'outline',
+  },
+  {
+    name: 'Growth', monthly: 10, annual: 96, competitorMonthly: 25,
+    pages: '25 pages', frequency: 'Every 12 hours',
+    features: ['Everything in Starter', 'White-label PDF export', 'Site-wide scan'],
+    cta: 'Upgrade', style: 'featured',
+  },
+  {
+    name: 'Business', monthly: 20, annual: 192, competitorMonthly: 50,
+    pages: '50 pages', frequency: 'Every 6 hours',
+    features: ['Everything in Growth', 'API access', 'Multi-client workspaces'],
+    cta: 'Upgrade', style: 'outline',
+  },
+];
+
+let isAnnual = false;
+
+function toggleBilling() {
+  isAnnual = !isAnnual;
+  document.getElementById('billingToggle').classList.toggle('annual', isAnnual);
+  renderPlans();
+}
+
+function renderPlans() {
+  const grid = document.getElementById('plansGrid');
+  grid.innerHTML = PLANS.map(p => {
+    const price = isAnnual ? p.annual : p.monthly;
+    const period = isAnnual ? '/yr' : '/mo';
+    const cardClass = p.style === 'featured' ? 'plan-card featured' : 'plan-card';
+    const btnClass = p.style === 'current' ? 'btn-plan current' : p.style === 'featured' ? 'btn-plan filled' : 'btn-plan';
+    return `
+      <div class="${cardClass}">
+        <div class="plan-name">${p.name}</div>
+        ${p.competitorMonthly ? `<div class="plan-old-price">Comparable plan elsewhere: $${p.competitorMonthly}/mo</div>` : '<div style="height:16px;"></div>'}
+        <div class="plan-price">$${price}<span>${period}</span></div>
+        ${p.competitorMonthly ? `<div class="plan-discount">60% less</div>` : '<div style="height:17px;"></div>'}
+        <div class="plan-feature"><strong>${p.pages}</strong>${p.frequency}</div>
+        <ul class="plan-list">
+          ${p.features.map(f => `<li><span class="checkmark">✓</span>${f}</li>`).join('')}
+        </ul>
+        <button class="${btnClass}" ${p.style === 'current' ? 'disabled' : ''} onclick="selectPlan('${p.name}')">${p.cta}</button>
+      </div>
+    `;
+  }).join('');
+}
+
+function selectPlan(name) {
+  alert(`Billing isn't wired up yet in this build — "${name}" plan selection would go here once Stripe is connected.`);
+}
+
+const COMPARE_ROWS = [
+  { label: 'Monitored pages', values: ['3', '10', '25', '50'] },
+  { label: 'Check frequency', values: ['Daily', 'Daily', 'Every 12h', 'Every 6h'] },
+  { label: 'History retention', values: ['14 days', '30 days', '90 days', '1 year'] },
+  { label: 'SEO Impact Score', values: [true, true, true, true] },
+  { label: 'Word-level content diff', values: [true, true, true, true] },
+  { label: 'Screenshot + visual diff', values: [true, true, true, true] },
+  { label: 'Uptime monitoring', values: [true, true, true, true] },
+  { label: 'Email alerts', values: [true, true, true, true] },
+  { label: 'Slack alerts', values: [false, true, true, true] },
+  { label: 'Site-wide scan (outreach finder)', values: [false, false, true, true] },
+  { label: 'White-label PDF export', values: [false, false, true, true] },
+  { label: 'API access', values: [false, false, false, true] },
+  { label: 'Multi-client workspaces', values: [false, false, false, true] },
+];
+
+function renderCompareTable() {
+  const table = document.getElementById('compareTable');
+  let html = '<tr><th>Feature</th>' + PLANS.map(p => `<th>${p.name}</th>`).join('') + '</tr>';
+  COMPARE_ROWS.forEach(row => {
+    html += `<tr><td>${row.label}</td>${row.values.map(v => {
+      if (typeof v === 'boolean') return `<td>${v ? '<span class="yes">✓</span>' : '<span class="no">✕</span>'}</td>`;
+      return `<td>${v}</td>`;
+    }).join('')}</tr>`;
+  });
+  table.innerHTML = html;
+}
+
+renderPlans();
+renderCompareTable();
+</script>
+
+</body>
+</html>

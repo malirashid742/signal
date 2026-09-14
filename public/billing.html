@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Billing — Signal</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --ink:#0F172A; --paper:#F7F7F5; --amber:#E8A33D;
+    --added:#1F7A4D; --muted:#6B7280; --line:#E4E2DC; --text:#1A1D23;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;font-family:'Inter',sans-serif;color:var(--text);background:var(--paper);animation:fadeIn 0.3s ease;}
+  h1,h2,h3{font-family:'Space Grotesk',sans-serif;}
+  @keyframes fadeIn{from{opacity:0;}to{opacity:1;}}
+  @keyframes fadeInUp{from{opacity:0;transform:translateY(8px);}to{opacity:1;transform:translateY(0);}}
+
+  header{background:var(--ink);color:#fff;padding:16px 28px;display:flex;justify-content:space-between;align-items:center;}
+  .logo{font-family:'Space Grotesk';font-weight:700;font-size:18px;display:flex;align-items:center;gap:8px;}
+  .logo-mark{width:9px;height:9px;background:var(--amber);border-radius:2px;transform:rotate(45deg);}
+  .back-link{color:#B6BDCB;font-size:13px;text-decoration:none;transition:color 0.15s;}
+  .back-link:hover{color:#fff;}
+
+  .layout{display:flex;max-width:1000px;margin:0 auto;}
+  .sidebar{width:200px;padding:28px 16px;flex-shrink:0;}
+  .sidebar a{display:block;padding:9px 12px;font-size:13px;color:var(--muted);text-decoration:none;border-radius:6px;margin-bottom:2px;transition:background 0.15s,color 0.15s;}
+  .sidebar a:hover{background:#fff;color:var(--ink);}
+  .sidebar a.active{background:#fff;color:var(--ink);font-weight:600;}
+
+  .main{flex:1;padding:28px 20px;}
+  .row{display:grid;grid-template-columns:2fr 1fr;gap:16px;margin-bottom:16px;}
+  .card{background:#fff;border:1px solid var(--line);border-radius:12px;padding:22px;animation:fadeInUp 0.3s ease;transition:box-shadow 0.2s;}
+  .card:hover{box-shadow:0 4px 16px rgba(15,23,42,0.05);}
+  .card-title{font-size:16px;font-weight:600;margin:0 0 4px;}
+  .card-sub{font-size:13px;color:var(--muted);margin:0;}
+
+  .btn{padding:10px 18px;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;border:1px solid var(--line);background:var(--paper);color:var(--text);transition:background 0.15s;}
+  .btn:hover{background:#EFEFEA;}
+  .btn-dark{background:var(--ink);color:#fff;border:none;}
+  .btn-dark:hover{background:#1E293B;}
+
+  .stat-num{font-family:'Space Grotesk';font-size:28px;font-weight:700;}
+  .stat-label{font-size:12px;color:var(--muted);margin-top:4px;}
+
+  label{display:block;font-size:12px;color:var(--muted);margin-bottom:6px;}
+  input[type=email]{width:100%;padding:10px 14px;font-size:14px;border:1px solid #D8D5CC;border-radius:8px;background:var(--paper);}
+  .field-row{display:flex;justify-content:space-between;align-items:center;margin-top:16px;}
+  .update-link{font-size:13px;color:var(--ink);text-decoration:underline;cursor:pointer;background:none;border:none;font-family:'Inter';}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo"><span class="logo-mark"></span>Signal</div>
+  <a href="/dashboard.html" class="back-link">← Back to dashboard</a>
+</header>
+
+<div class="layout">
+  <div class="sidebar">
+    <a href="/subscription.html">Subscriptions</a>
+    <a href="/billing.html" class="active">Billing</a>
+    <a href="/profile.html">Profile</a>
+  </div>
+
+  <div class="main">
+    <div class="row">
+      <div class="card">
+        <div class="card-title">Plan information</div>
+        <p class="card-sub" id="planStatus">You're on the Free plan.</p>
+        <button class="btn" style="margin-top:14px;" onclick="window.location.href='/subscription.html'">Manage subscription</button>
+      </div>
+      <div class="card">
+        <div class="stat-num" id="pagesUsed">–</div>
+        <div class="stat-label">of <span id="pagesCap">3</span> pages used</div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-bottom:16px;">
+      <div class="field-row" style="margin-top:0;">
+        <div>
+          <div class="card-title" style="font-size:14px;">Billing address</div>
+        </div>
+        <button class="update-link">Update</button>
+      </div>
+      <label style="margin-top:16px;">Billing emails are sent to</label>
+      <input type="email" id="billingEmail" placeholder="you@company.com" readonly />
+      <p class="card-sub" style="margin-top:8px;">Set in your <a href="/profile.html" style="color:var(--ink);">Profile</a> settings.</p>
+    </div>
+
+    <div class="card">
+      <button class="btn-dark btn" onclick="alert('Support request flow not wired up in this build.')">Request support</button>
+    </div>
+  </div>
+</div>
+
+<script>
+async function loadBilling() {
+  try {
+    const [profileRes, monitorsRes] = await Promise.all([
+      fetch('/api/profile'),
+      fetch('/api/monitors'),
+    ]);
+    const profile = await profileRes.json();
+    const monitors = await monitorsRes.json();
+
+    document.getElementById('planStatus').textContent = `You're on the ${profile.plan || 'Free'} plan.`;
+    document.getElementById('billingEmail').value = profile.email || '(not set)';
+    document.getElementById('pagesUsed').textContent = monitors.monitors.length;
+    document.getElementById('pagesCap').textContent = monitors.cap;
+  } catch (e) {}
+}
+loadBilling();
+</script>
+
+</body>
+</html>
