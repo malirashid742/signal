@@ -14,7 +14,8 @@ const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
 const { fetchPage, extractData, diffSnapshots, outreachOpportunities } = require("./engine");
-const { sendChangeAlert, sendSlackAlert } = require("./alerts");
+const { sendChangeAlert, sendSlackAlert, sendDiscordAlert } = require("./alerts");
+const { supabase } = require("./supabaseClient");
 
 const DATA_DIR = path.join(__dirname, "data");
 const SUBS_FILE = path.join(DATA_DIR, "subscriptions.json");
@@ -96,73 +97,87 @@ async function processLegacySubscriptions() {
   }
 }
 
+// Real-account monitors now live in Supabase, not local files. The cron has no
+// user session (just the anon key), so it reads/writes through narrow
+// SECURITY DEFINER Postgres functions (cron_*) instead of the service_role key —
+// each does exactly one job and was tested under `set local role anon` before
+// being wired in here. This covers every account's monitors in one pass.
 async function processDashboardMonitors() {
-  if (!fs.existsSync(MONITORS_DIR)) return;
-  const userFiles = fs.readdirSync(MONITORS_DIR).filter((f) => f.endsWith(".json"));
+  const { data: monitors, error } = await supabase.rpc("cron_list_monitors");
+  if (error) {
+    console.error(`[monitors] Failed to list monitors: ${error.message}`);
+    return;
+  }
+  if (!monitors || !monitors.length) return;
 
-  for (const file of userFiles) {
-    const uid = file.replace(".json", "");
-    const monitorsPath = path.join(MONITORS_DIR, file);
-    const monitors = JSON.parse(fs.readFileSync(monitorsPath, "utf8"));
-    let changed = false;
+  for (const monitor of monitors) {
+    console.log(`[monitors:${monitor.user_id}] Checking ${monitor.url} (condition: ${monitor.condition}) ...`);
+    try {
+      const html = await fetchPage(monitor.url);
+      const snap = extractData(html, monitor.url);
 
-    for (const monitor of monitors) {
-      console.log(`[monitors:${uid}] Checking ${monitor.url} (condition: ${monitor.condition}) ...`);
-      try {
-        const html = await fetchPage(monitor.url);
-        const snap = extractData(html, monitor.url);
-        const history = loadHistory(monitor.url);
-        const last = history[history.length - 1];
-        history.push(snap);
-        saveHistory(monitor.url, history);
+      const { data: lastRow } = await supabase.rpc("cron_get_last_snapshot", { p_page_id: monitor.page_id });
+      const last = lastRow
+        ? { title: lastRow.title, metaDesc: lastRow.meta_desc, h1: lastRow.h1 || [], h2: lastRow.h2 || [], wordCount: lastRow.word_count, bodyTextHash: lastRow.body_text_hash, internalLinks: lastRow.internal_links || [], externalLinks: lastRow.external_links || [], images: lastRow.images || [], schemaTypes: lastRow.schema_types || [] }
+        : null;
 
-        monitor.lastCheckedAt = snap.fetchedAt;
-        monitor.status = "active";
-        changed = true;
+      await supabase.rpc("cron_insert_snapshot", {
+        p_page_id: monitor.page_id,
+        p_title: snap.title,
+        p_meta_desc: snap.metaDesc,
+        p_h1: snap.h1,
+        p_h2: snap.h2,
+        p_word_count: snap.wordCount,
+        p_body_text_hash: snap.bodyTextHash,
+        p_internal_links: snap.internalLinks,
+        p_external_links: snap.externalLinks,
+        p_images: snap.images,
+        p_schema_types: snap.schemaTypes,
+      });
 
-        if (!last) {
-          console.log(`  Baseline saved.`);
-          continue;
-        }
+      await supabase.rpc("cron_update_monitor_status", { p_monitor_id: monitor.id, p_status: "active", p_checked_at: snap.fetchedAt });
 
-        const diff = diffSnapshots(last, snap);
-        const outreach = outreachOpportunities(diff);
-
-        if (!matchesCondition(diff, outreach, monitor.condition)) {
-          console.log(`  No alert-worthy change for this monitor's condition.`);
-          continue;
-        }
-
-        console.log(`  Alert-worthy change found (${diff.impact.level} impact).`);
-
-        // Email — resolve to the account's alert email if we have one; monitors
-        // created via the dashboard don't collect an email today (uid-cookie based,
-        // no signup yet), so this is a no-op until real accounts exist. Left in so
-        // it activates automatically once account emails are added.
-        if (monitor.channels && monitor.channels.includes("email") && monitor.alertEmail) {
-          try {
-            await sendChangeAlert({ to: monitor.alertEmail, url: monitor.url, diff });
-            console.log(`    Emailed ${monitor.alertEmail}`);
-          } catch (e) {
-            console.error(`    Failed to email: ${e.message}`);
-          }
-        }
-
-        if (monitor.slackWebhook) {
-          try {
-            await sendSlackAlert({ webhookUrl: monitor.slackWebhook, url: monitor.url, diff });
-            console.log(`    Sent Slack alert`);
-          } catch (e) {
-            console.error(`    Slack alert failed: ${e.message}`);
-          }
-        }
-      } catch (e) {
-        console.error(`  Error checking ${monitor.url}: ${e.message}`);
+      if (!last) {
+        console.log(`  Baseline saved.`);
+        continue;
       }
-    }
 
-    if (changed) {
-      fs.writeFileSync(monitorsPath, JSON.stringify(monitors, null, 2));
+      const diff = diffSnapshots(last, snap);
+      const outreach = outreachOpportunities(diff);
+
+      if (!matchesCondition(diff, outreach, monitor.condition)) {
+        console.log(`  No alert-worthy change for this monitor's condition.`);
+        continue;
+      }
+
+      console.log(`  Alert-worthy change found (${diff.impact.level} impact).`);
+
+      if (monitor.channels && monitor.channels.includes("email") && monitor.email) {
+        try {
+          await sendChangeAlert({ to: monitor.email, url: monitor.url, diff });
+          console.log(`    Emailed ${monitor.email}`);
+        } catch (e) {
+          console.error(`    Failed to email: ${e.message}`);
+        }
+      }
+      if (monitor.slack_webhook) {
+        try {
+          await sendSlackAlert({ webhookUrl: monitor.slack_webhook, url: monitor.url, diff });
+          console.log(`    Sent Slack alert`);
+        } catch (e) {
+          console.error(`    Slack alert failed: ${e.message}`);
+        }
+      }
+      if (monitor.discord_webhook) {
+        try {
+          await sendDiscordAlert({ webhookUrl: monitor.discord_webhook, url: monitor.url, diff });
+          console.log(`    Sent Discord alert`);
+        } catch (e) {
+          console.error(`    Discord alert failed: ${e.message}`);
+        }
+      }
+    } catch (e) {
+      console.error(`  Error checking ${monitor.url}: ${e.message}`);
     }
   }
 }

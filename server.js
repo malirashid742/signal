@@ -6,8 +6,9 @@ const cookieParser = require("cookie-parser");
 const { v4: uuidv4 } = require("uuid");
 const { fetchPage, fetchPageWithMeta, extractData, diffSnapshots, fetchSitemapUrls, diffSitemap, publishingVelocity, outreachOpportunities, checkLinksInPool } = require("./engine");
 const { generateShareCard } = require("./sharecard");
-const { sendSlackAlert } = require("./alerts");
+const { sendSlackAlert, sendDiscordAlert } = require("./alerts");
 const { captureScreenshot, compareScreenshots } = require("./screenshot");
+const { supabase, createUserClient } = require("./supabaseClient");
 
 const app = express();
 app.use(express.json());
@@ -27,25 +28,119 @@ const publicToolLimiter = rateLimit({
 app.use(cookieParser());
 app.use(express.static(path.join(__dirname, "public")));
 
-// Lightweight pseudo-account: a uid cookie identifies "this browser" as a user.
-// NOT real auth (no password, no real Google OAuth) — good enough for a free MVP
-// dashboard demo. Swap for real auth (Supabase Auth / Google OAuth) before charging
-// money or storing anything sensitive.
-app.use((req, res, next) => {
-  let uid = req.cookies.uid;
-  if (!uid) {
-    uid = uuidv4();
-    res.cookie("uid", uid, { maxAge: 1000 * 60 * 60 * 24 * 365, httpOnly: true });
+const COOKIE_OPTS = { httpOnly: true, sameSite: "lax", secure: process.env.NODE_ENV === "production" };
+
+function setAuthCookies(res, session) {
+  res.cookie("sb_access_token", session.access_token, { ...COOKIE_OPTS, maxAge: 1000 * 60 * 60 * 24 * 7 });
+  res.cookie("sb_refresh_token", session.refresh_token, { ...COOKIE_OPTS, maxAge: 1000 * 60 * 60 * 24 * 30 });
+}
+function clearAuthCookies(res) {
+  res.clearCookie("sb_access_token");
+  res.clearCookie("sb_refresh_token");
+  res.clearCookie("demo_mode");
+}
+
+// Real auth (Supabase) + demo-mode resolver. Demo mode (cookie demo_mode=1) is a
+// completely separate path from real accounts — it never touches Supabase, always
+// reads/writes the seeded local files under uid "demo-user". Real accounts always
+// go through Supabase (Auth + Postgres), so data survives redeploys.
+app.use(async (req, res, next) => {
+  req.isDemo = false;
+  req.userId = null;
+  req.db = null;
+
+  if (req.cookies.demo_mode === "1") {
+    req.isDemo = true;
+    req.userId = "demo-user";
+    return next();
   }
-  req.uid = uid;
+
+  let token = req.cookies.sb_access_token;
+  if (token) {
+    try {
+      let { data, error } = await supabase.auth.getUser(token);
+      if (error) {
+        // access token expired — try the refresh token before giving up
+        const refreshToken = req.cookies.sb_refresh_token;
+        if (refreshToken) {
+          const { data: refreshed, error: refreshErr } = await supabase.auth.refreshSession({ refresh_token: refreshToken });
+          if (!refreshErr && refreshed.session) {
+            setAuthCookies(res, refreshed.session);
+            token = refreshed.session.access_token;
+            data = { user: refreshed.user };
+            error = null;
+          }
+        }
+      }
+      if (!error && data.user) {
+        req.userId = data.user.id;
+        req.db = createUserClient(token);
+      }
+    } catch (e) {
+      console.error("Auth check failed:", e.message);
+    }
+  }
   next();
 });
 
-// GET /demo — switches this browser to the seeded demo account (uid "demo-user")
-// so anyone can see a fully populated dashboard instantly, without waiting on real
-// checks. Run `node seed-demo.js` once to generate the demo data.
+function requireAuth(req, res, next) {
+  if (!req.userId) return res.status(401).json({ error: "Not signed in." });
+  next();
+}
+
+// ---------- REAL AUTH (Supabase) ----------
+// Signup ALWAYS captures name + email (business requirement: lets us export the
+// profiles table later for email marketing, no code needed — just Supabase
+// Table Editor -> profiles -> Export CSV). Name is passed as auth user_metadata so
+// the on-signup DB trigger saves it even before email confirmation completes.
+app.post("/api/auth/signup", async (req, res) => {
+  const { email, password, firstName, lastName } = req.body;
+  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return res.status(400).json({ error: "Provide a valid email address." });
+  if (!password || password.length < 6) return res.status(400).json({ error: "Password must be at least 6 characters." });
+  if (!firstName || !firstName.trim()) return res.status(400).json({ error: "First name is required." });
+
+  const { data, error } = await supabase.auth.signUp({
+    email,
+    password,
+    options: { data: { first_name: firstName.trim(), last_name: (lastName || "").trim() } },
+  });
+  if (error) return res.status(400).json({ error: error.message });
+
+  if (data.session) {
+    setAuthCookies(res, data.session);
+    return res.json({ ok: true, needsConfirmation: false });
+  }
+  // Email confirmation is required before a session is issued — name/email are
+  // already saved via the trigger regardless.
+  res.json({ ok: true, needsConfirmation: true, message: "Check your email to confirm your account, then log in." });
+});
+
+app.post("/api/auth/login", async (req, res) => {
+  const { email, password } = req.body;
+  if (!email || !password) return res.status(400).json({ error: "Email and password are required." });
+  const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+  if (error) return res.status(401).json({ error: error.message });
+  setAuthCookies(res, data.session);
+  res.json({ ok: true });
+});
+
+app.post("/api/auth/logout", (req, res) => {
+  clearAuthCookies(res);
+  res.json({ ok: true });
+});
+
+app.get("/api/auth/session", async (req, res) => {
+  if (req.isDemo) return res.json({ authenticated: true, isDemo: true });
+  if (!req.userId) return res.json({ authenticated: false });
+  res.json({ authenticated: true, isDemo: false, userId: req.userId });
+});
+
+// GET /demo — switches this browser into demo mode (seeded, file-based sample
+// data) so anyone can see a fully populated dashboard instantly, without signing
+// up. Run `node seed-demo.js` once to generate the demo data.
 app.get("/demo", (req, res) => {
-  res.cookie("uid", "demo-user", { maxAge: 1000 * 60 * 60 * 24 * 365, httpOnly: true });
+  clearAuthCookies(res);
+  res.cookie("demo_mode", "1", { maxAge: 1000 * 60 * 60 * 24 * 365, httpOnly: true });
   res.redirect("/dashboard.html");
 });
 
@@ -126,8 +221,8 @@ function saveUptimePings(pageId, pings) {
   fs.writeFileSync(uptimeFile(pageId), JSON.stringify(pings.slice(-500), null, 2));
 }
 
-function computeUptimeStats(pageId) {
-  const pings = loadUptimePings(pageId);
+// Pure calculation — takes an already-loaded pings array, storage-agnostic.
+function calcUptimeStats(pings) {
   if (!pings.length) return null;
 
   const now = Date.now();
@@ -158,6 +253,36 @@ function computeUptimeStats(pageId) {
     last30Days: statsFor(30),
     responseTimeSeries: pings.slice(-50).map((p) => ({ at: p.at, responseTimeMs: p.up ? p.responseTimeMs : null, up: p.up })),
   };
+}
+
+function computeUptimeStats(pageId) {
+  return calcUptimeStats(loadUptimePings(pageId));
+}
+
+function mapUptimeRow(row) {
+  return { at: row.checked_at, status: row.status, up: row.up, responseTimeMs: row.response_time_ms };
+}
+
+// Dual-mode uptime pings — demo: local file; real account: Supabase `uptime_pings`
+// (RLS-scoped to the caller's own monitors via req.db).
+async function loadMonitorUptimePingsAsync(req, pageId) {
+  if (req.isDemo) return loadUptimePings(pageId);
+  const { data, error } = await req.db.from("uptime_pings").select("*").eq("page_id", pageId).order("checked_at", { ascending: true }).limit(500);
+  if (error) throw error;
+  return data.map(mapUptimeRow);
+}
+async function insertMonitorUptimePingAsync(req, pageId, ping) {
+  if (req.isDemo) {
+    const pings = loadUptimePings(pageId);
+    pings.push(ping);
+    saveUptimePings(pageId, pings);
+    return;
+  }
+  const { error } = await req.db.from("uptime_pings").insert({ page_id: pageId, status: ping.status, up: ping.up, response_time_ms: ping.responseTimeMs });
+  if (error) throw error;
+}
+async function computeUptimeStatsAsync(req, pageId) {
+  return calcUptimeStats(await loadMonitorUptimePingsAsync(req, pageId));
 }
 
 function keyFor(url) {
@@ -224,6 +349,141 @@ function saveMonitors(uid, monitors) {
   fs.writeFileSync(monitorsFile(uid), JSON.stringify(monitors, null, 2));
 }
 
+function mapMonitorRow(row) {
+  return {
+    id: row.id,
+    url: row.url,
+    pageId: row.page_id,
+    condition: row.condition,
+    frequency: row.frequency || "daily",
+    channels: row.channels || ["email"],
+    slackWebhook: row.slack_webhook,
+    discordWebhook: row.discord_webhook,
+    status: row.status,
+    createdAt: row.created_at,
+    lastCheckedAt: row.last_checked_at,
+  };
+}
+
+// Dual-mode monitors — demo: local file (uid "demo-user"); real account: Supabase
+// `monitors` table, RLS-scoped via req.db so a user can only ever see/change their own.
+async function loadMonitorsAsync(req) {
+  if (req.isDemo) return loadMonitors(req.userId);
+  const { data, error } = await req.db.from("monitors").select("*").order("created_at", { ascending: true });
+  if (error) throw error;
+  return data.map(mapMonitorRow);
+}
+async function insertMonitorAsync(req, monitor) {
+  if (req.isDemo) {
+    const monitors = loadMonitors(req.userId);
+    monitors.push(monitor);
+    saveMonitors(req.userId, monitors);
+    return monitor;
+  }
+  const { data, error } = await req.db.from("monitors").insert({
+    user_id: req.userId,
+    url: monitor.url,
+    page_id: monitor.pageId,
+    condition: monitor.condition,
+    frequency: monitor.frequency,
+    channels: monitor.channels,
+    slack_webhook: monitor.slackWebhook,
+    discord_webhook: monitor.discordWebhook,
+    status: monitor.status,
+  }).select().single();
+  if (error) throw error;
+  return mapMonitorRow(data);
+}
+async function deleteMonitorAsync(req, id) {
+  if (req.isDemo) {
+    const monitors = loadMonitors(req.userId).filter((m) => m.id !== id);
+    saveMonitors(req.userId, monitors);
+    return;
+  }
+  const { error } = await req.db.from("monitors").delete().eq("id", id);
+  if (error) throw error;
+}
+async function updateMonitorAsync(req, id, fields) {
+  if (req.isDemo) {
+    const monitors = loadMonitors(req.userId);
+    const m = monitors.find((x) => x.id === id);
+    if (m) Object.assign(m, fields);
+    saveMonitors(req.userId, monitors);
+    return;
+  }
+  const dbFields = {};
+  if (fields.status !== undefined) dbFields.status = fields.status;
+  if (fields.lastCheckedAt !== undefined) dbFields.last_checked_at = fields.lastCheckedAt;
+  const { error } = await req.db.from("monitors").update(dbFields).eq("id", id);
+  if (error) throw error;
+}
+
+function mapSnapshotRow(row) {
+  return {
+    dbId: row.id,
+    fetchedAt: row.fetched_at,
+    title: row.title,
+    metaDesc: row.meta_desc,
+    h1: row.h1 || [],
+    h2: row.h2 || [],
+    wordCount: row.word_count,
+    bodyTextHash: row.body_text_hash,
+    internalLinks: row.internal_links || [],
+    externalLinks: row.external_links || [],
+    images: row.images || [],
+    schemaTypes: row.schema_types || [],
+    screenshotFile: row.screenshot_file,
+    screenshotDiffFile: row.screenshot_diff_file,
+    screenshotDiffPercent: row.screenshot_diff_percent,
+  };
+}
+
+// Dual-mode monitor content history — demo: local file (keyed by url, same as the
+// legacy public /api/check tool); real account: Supabase `snapshots` table,
+// RLS-scoped via req.db to snapshots whose page_id belongs to one of the caller's
+// own monitors.
+async function loadMonitorHistoryAsync(req, monitor) {
+  if (req.isDemo) return loadHistory(monitor.url);
+  const { data, error } = await req.db.from("snapshots").select("*").eq("page_id", monitor.pageId).order("fetched_at", { ascending: true });
+  if (error) throw error;
+  return data.map(mapSnapshotRow);
+}
+async function insertMonitorSnapshotAsync(req, monitor, snap) {
+  if (req.isDemo) {
+    const history = loadHistory(monitor.url);
+    history.push(snap);
+    saveHistory(monitor.url, history);
+    return snap;
+  }
+  const { data, error } = await req.db.from("snapshots").insert({
+    page_id: monitor.pageId,
+    title: snap.title,
+    meta_desc: snap.metaDesc,
+    h1: snap.h1,
+    h2: snap.h2,
+    word_count: snap.wordCount,
+    body_text_hash: snap.bodyTextHash,
+    internal_links: snap.internalLinks,
+    external_links: snap.externalLinks,
+    images: snap.images,
+    schema_types: snap.schemaTypes,
+  }).select().single();
+  if (error) throw error;
+  return mapSnapshotRow(data);
+}
+async function updateSnapshotScreenshotAsync(req, monitor, dbSnap, screenshotFile, screenshotDiffFile, screenshotDiffPercent) {
+  if (req.isDemo) return; // demo history is already written whole in insertMonitorSnapshotAsync
+  const { error } = await req.db.from("snapshots").update({
+    screenshot_file: screenshotFile,
+    screenshot_diff_file: screenshotDiffFile,
+    screenshot_diff_percent: screenshotDiffPercent,
+  }).eq("id", dbSnap.dbId);
+  if (error) throw error;
+}
+async function computeMonitorStatsAsync(req, monitor) {
+  return calcMonitorStats(await loadMonitorHistoryAsync(req, monitor));
+}
+
 // ---------- PROFILE (name, email, timezone — saved per uid) ----------
 const PROFILES_DIR = path.join(DATA_DIR, "profiles");
 if (!fs.existsSync(PROFILES_DIR)) fs.mkdirSync(PROFILES_DIR, { recursive: true });
@@ -240,37 +500,71 @@ function saveProfile(uid, profile) {
   fs.writeFileSync(profileFile(uid), JSON.stringify(profile, null, 2));
 }
 
+function mapProfileRow(row) {
+  return {
+    firstName: row.first_name || "",
+    lastName: row.last_name || "",
+    email: row.email || "",
+    timezone: row.timezone || "UTC",
+    useCase: row.use_case || null,
+    plan: row.plan || "Free",
+  };
+}
+
+// Dual-mode: demo -> local file; real account -> Supabase `profiles` row
+// (RLS-scoped via req.db, so this can only ever read/write the caller's own row).
+async function loadProfileAsync(req) {
+  if (req.isDemo) return loadProfile(req.userId);
+  const { data, error } = await req.db.from("profiles").select("*").eq("id", req.userId).single();
+  if (error) throw error;
+  return mapProfileRow(data);
+}
+async function saveProfileAsync(req, fields) {
+  if (req.isDemo) {
+    const existing = loadProfile(req.userId);
+    const profile = { ...existing, ...fields };
+    saveProfile(req.userId, profile);
+    return profile;
+  }
+  const dbFields = {};
+  if (fields.firstName !== undefined) dbFields.first_name = fields.firstName;
+  if (fields.lastName !== undefined) dbFields.last_name = fields.lastName;
+  if (fields.timezone !== undefined) dbFields.timezone = fields.timezone;
+  if (fields.useCase !== undefined) dbFields.use_case = fields.useCase;
+  const { data, error } = await req.db.from("profiles").update(dbFields).eq("id", req.userId).select().single();
+  if (error) throw error;
+  return mapProfileRow(data);
+}
+
 // GET /api/profile
-app.get("/api/profile", (req, res) => {
-  res.json(loadProfile(req.uid));
+app.get("/api/profile", requireAuth, async (req, res) => {
+  try {
+    res.json(await loadProfileAsync(req));
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
 });
 
-// POST /api/profile — body: { firstName, lastName, email, timezone, useCase }
+// POST /api/profile — body: { firstName, lastName, timezone, useCase }
+// Email is NOT editable here — it's fixed at signup (real accounts) and is the
+// field the email-marketing export relies on.
 // useCase: "myself" | "clients" | "company" — set once during onboarding
-app.post("/api/profile", (req, res) => {
-  const { firstName, lastName, email, timezone, useCase } = req.body;
-  if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-    return res.status(400).json({ error: "Invalid email address." });
+app.post("/api/profile", requireAuth, async (req, res) => {
+  const { firstName, lastName, timezone, useCase } = req.body;
+  try {
+    const profile = await saveProfileAsync(req, { firstName, lastName, timezone, useCase });
+    res.json({ ok: true, profile });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
   }
-  const existing = loadProfile(req.uid);
-  const profile = {
-    ...existing,
-    firstName: firstName ?? existing.firstName,
-    lastName: lastName ?? existing.lastName,
-    email: email ?? existing.email,
-    timezone: timezone ?? existing.timezone,
-    useCase: useCase ?? existing.useCase,
-  };
-  saveProfile(req.uid, profile);
-  res.json({ ok: true, profile });
 });
 
 const FREE_MONITOR_CAP = 3;
 
 // Computes "how many changes in the last N days" for a monitor, plus total checks —
 // this is what makes the dashboard feel mature instead of just a raw event list.
-function computeMonitorStats(url) {
-  const history = loadHistory(url);
+// Pure calculation — takes an already-loaded history array, storage-agnostic.
+function calcMonitorStats(history) {
   if (history.length < 2) {
     return { totalChecks: history.length, changesLast7Days: 0, changesLast30Days: 0, lastChangeAt: null, addedAt: history[0]?.fetchedAt || null };
   }
@@ -299,6 +593,10 @@ function computeMonitorStats(url) {
   };
 }
 
+function computeMonitorStats(url) {
+  return calcMonitorStats(loadHistory(url));
+}
+
 // GET /screenshots/:pageId/:filename — serve a stored screenshot or diff image
 app.get("/screenshots/:pageId/:filename", (req, res) => {
   const filePath = path.join(SCREENSHOTS_DIR, req.params.pageId, req.params.filename);
@@ -307,73 +605,80 @@ app.get("/screenshots/:pageId/:filename", (req, res) => {
   res.sendFile(filePath);
 });
 
-// GET /api/monitors — list this browser's monitored pages
-app.get("/api/monitors", (req, res) => {
-  const monitors = loadMonitors(req.uid).map((m) => ({ ...m, stats: computeMonitorStats(m.url) }));
-  res.json({ monitors, cap: FREE_MONITOR_CAP });
+// GET /api/monitors — list this account's monitored pages
+app.get("/api/monitors", requireAuth, async (req, res) => {
+  try {
+    const monitors = await loadMonitorsAsync(req);
+    const withStats = await Promise.all(monitors.map(async (m) => ({ ...m, stats: await computeMonitorStatsAsync(req, m) })));
+    res.json({ monitors: withStats, cap: FREE_MONITOR_CAP });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
 });
 
 // POST /api/monitors — add a new monitored page
-// body: { url, condition, frequency, channels, slackWebhook }
-app.post("/api/monitors", (req, res) => {
-  const { url, condition, frequency, channels, slackWebhook } = req.body;
+// body: { url, condition, frequency, channels, slackWebhook, discordWebhook }
+app.post("/api/monitors", requireAuth, async (req, res) => {
+  const { url, condition, frequency, channels, slackWebhook, discordWebhook } = req.body;
   if (!url || !/^https?:\/\//.test(url)) {
     return res.status(400).json({ error: "Provide a valid URL." });
   }
-  const monitors = loadMonitors(req.uid);
-  if (monitors.length >= FREE_MONITOR_CAP) {
-    return res.status(402).json({ error: `Free plan allows ${FREE_MONITOR_CAP} monitored pages. Upgrade to add more.`, capReached: true });
+  try {
+    const existing = await loadMonitorsAsync(req);
+    if (existing.length >= FREE_MONITOR_CAP) {
+      return res.status(402).json({ error: `Free plan allows ${FREE_MONITOR_CAP} monitored pages. Upgrade to add more.`, capReached: true });
+    }
+    const monitor = {
+      id: uuidv4(),
+      url,
+      pageId: keyFor(url),
+      condition: condition || "any_change", // any_change | high_impact | new_pages | outreach
+      frequency: frequency || "daily",       // free tier only supports daily
+      channels: channels || ["email"],
+      slackWebhook: slackWebhook || null,
+      discordWebhook: discordWebhook || null,
+      status: "checking",
+      createdAt: new Date().toISOString(),
+    };
+    const saved = await insertMonitorAsync(req, monitor);
+    res.json({ ok: true, monitor: saved });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
   }
-  const monitor = {
-    id: uuidv4(),
-    url,
-    pageId: keyFor(url),
-    condition: condition || "any_change", // any_change | high_impact | new_pages | outreach
-    frequency: frequency || "daily",       // free tier only supports daily
-    channels: channels || ["email"],
-    slackWebhook: slackWebhook || null,
-    status: "checking",
-    createdAt: new Date().toISOString(),
-  };
-  monitors.push(monitor);
-  saveMonitors(req.uid, monitors);
-  res.json({ ok: true, monitor });
 });
 
 // DELETE /api/monitors/:id
-app.delete("/api/monitors/:id", (req, res) => {
-  const monitors = loadMonitors(req.uid);
-  const filtered = monitors.filter((m) => m.id !== req.params.id);
-  saveMonitors(req.uid, filtered);
-  res.json({ ok: true });
+app.delete("/api/monitors/:id", requireAuth, async (req, res) => {
+  try {
+    await deleteMonitorAsync(req, req.params.id);
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
 });
 
 // POST /api/monitors/:id/check — run a check now for this monitor (used for the
 // "Check in progress..." live state and to populate its history panel)
-app.post("/api/monitors/:id/check", async (req, res) => {
-  const monitors = loadMonitors(req.uid);
-  const monitor = monitors.find((m) => m.id === req.params.id);
-  if (!monitor) return res.status(404).json({ error: "Monitor not found." });
-
+app.post("/api/monitors/:id/check", requireAuth, async (req, res) => {
   try {
+    const monitors = await loadMonitorsAsync(req);
+    const monitor = monitors.find((m) => m.id === req.params.id);
+    if (!monitor) return res.status(404).json({ error: "Monitor not found." });
+
     // Uptime ping is recorded regardless of outcome — a 404/500/timeout IS the data
     // point for uptime tracking, unlike content checks where it's an error to throw.
     const pageResult = await fetchPageWithMeta(monitor.url);
-    const uptimePings = loadUptimePings(monitor.pageId);
-    uptimePings.push({ at: new Date().toISOString(), status: pageResult.status, up: pageResult.up, responseTimeMs: pageResult.responseTimeMs });
-    saveUptimePings(monitor.pageId, uptimePings);
+    await insertMonitorUptimePingAsync(req, monitor.pageId, { at: new Date().toISOString(), status: pageResult.status, up: pageResult.up, responseTimeMs: pageResult.responseTimeMs });
 
     if (!pageResult.up) {
       // Page is down — record the outage, skip content/screenshot diffing (nothing
       // meaningful to diff), but don't treat this as a server error.
-      monitor.status = "active";
-      monitor.lastCheckedAt = new Date().toISOString();
-      saveMonitors(req.uid, monitors);
-      return res.json({ mode: "down", status: pageResult.status, error: pageResult.error, uptime: computeUptimeStats(monitor.pageId) });
+      await updateMonitorAsync(req, monitor.id, { status: "active", lastCheckedAt: new Date().toISOString() });
+      return res.json({ mode: "down", status: pageResult.status, error: pageResult.error, uptime: await computeUptimeStatsAsync(req, monitor.pageId) });
     }
 
     const snap = extractData(pageResult.html, monitor.url);
-    const history = loadHistory(monitor.url);
+    const history = await loadMonitorHistoryAsync(req, monitor);
     const last = history[history.length - 1];
 
     // Screenshot capture happens before saving history so the filename can be
@@ -384,14 +689,12 @@ app.post("/api/monitors/:id/check", async (req, res) => {
     snap.screenshotDiffFile = screenshot.diffScreenshot || null;
     snap.screenshotDiffPercent = screenshot.diffPercent ?? null;
 
-    history.push(snap);
-    saveHistory(monitor.url, history);
+    const savedSnap = await insertMonitorSnapshotAsync(req, monitor, snap);
+    await updateSnapshotScreenshotAsync(req, monitor, savedSnap, snap.screenshotFile, snap.screenshotDiffFile, snap.screenshotDiffPercent);
 
-    monitor.status = "active";
-    monitor.lastCheckedAt = snap.fetchedAt;
-    saveMonitors(req.uid, monitors);
+    await updateMonitorAsync(req, monitor.id, { status: "active", lastCheckedAt: snap.fetchedAt });
 
-    const uptime = computeUptimeStats(monitor.pageId);
+    const uptime = await computeUptimeStatsAsync(req, monitor.pageId);
 
     if (!last) {
       return res.json({ mode: "baseline", snapshot: summarize(snap), screenshot, uptime });
@@ -399,9 +702,10 @@ app.post("/api/monitors/:id/check", async (req, res) => {
     const diff = diffSnapshots(last, snap);
     const outreach = outreachOpportunities(diff);
 
-    // Fire Slack alert immediately if this monitor has a webhook configured and
-    // changes were found — best-effort, never blocks or fails the check response.
+    // Fire Slack/Discord alerts immediately if this monitor has webhooks configured
+    // and changes were found — best-effort, never blocks or fails the check response.
     let slackSent = false;
+    let discordSent = false;
     if (diff.hasChanges && monitor.slackWebhook) {
       try {
         await sendSlackAlert({ webhookUrl: monitor.slackWebhook, url: monitor.url, diff });
@@ -410,102 +714,126 @@ app.post("/api/monitors/:id/check", async (req, res) => {
         console.error("Slack alert failed:", e.message);
       }
     }
+    if (diff.hasChanges && monitor.discordWebhook) {
+      try {
+        await sendDiscordAlert({ webhookUrl: monitor.discordWebhook, url: monitor.url, diff });
+        discordSent = true;
+      } catch (e) {
+        console.error("Discord alert failed:", e.message);
+      }
+    }
 
-    return res.json({ mode: "diff", hasChanges: diff.hasChanges, diff, outreach, screenshot, uptime, slackSent, lastCheckedAt: last.fetchedAt, currentCheckedAt: snap.fetchedAt });
+    return res.json({ mode: "diff", hasChanges: diff.hasChanges, diff, outreach, screenshot, uptime, slackSent, discordSent, lastCheckedAt: last.fetchedAt, currentCheckedAt: snap.fetchedAt });
   } catch (e) {
     return res.status(500).json({ error: e.message });
   }
 });
 
 // GET /api/monitors/:id/history — full diff timeline for one monitor (right panel)
-app.get("/api/monitors/:id/history", (req, res) => {
-  const monitors = loadMonitors(req.uid);
-  const monitor = monitors.find((m) => m.id === req.params.id);
-  if (!monitor) return res.status(404).json({ error: "Monitor not found." });
+app.get("/api/monitors/:id/history", requireAuth, async (req, res) => {
+  try {
+    const monitors = await loadMonitorsAsync(req);
+    const monitor = monitors.find((m) => m.id === req.params.id);
+    if (!monitor) return res.status(404).json({ error: "Monitor not found." });
 
-  const history = loadHistory(monitor.url);
-  const diffs = [];
-  for (let i = 1; i < history.length; i++) {
-    diffs.push({
-      at: history[i].fetchedAt,
-      diff: diffSnapshots(history[i - 1], history[i]),
-      screenshotFile: history[i].screenshotFile || null,
-      screenshotDiffFile: history[i].screenshotDiffFile || null,
-      screenshotDiffPercent: history[i].screenshotDiffPercent ?? null,
-      previousScreenshotFile: history[i - 1].screenshotFile || null,
-    });
+    const history = await loadMonitorHistoryAsync(req, monitor);
+    const diffs = [];
+    for (let i = 1; i < history.length; i++) {
+      diffs.push({
+        at: history[i].fetchedAt,
+        diff: diffSnapshots(history[i - 1], history[i]),
+        screenshotFile: history[i].screenshotFile || null,
+        screenshotDiffFile: history[i].screenshotDiffFile || null,
+        screenshotDiffPercent: history[i].screenshotDiffPercent ?? null,
+        previousScreenshotFile: history[i - 1].screenshotFile || null,
+      });
+    }
+    diffs.reverse();
+    res.json({ monitor, diffs, checksRecorded: history.length, stats: calcMonitorStats(history), uptime: await computeUptimeStatsAsync(req, monitor.pageId) });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
   }
-  diffs.reverse();
-  res.json({ monitor, diffs, checksRecorded: history.length, stats: computeMonitorStats(monitor.url), uptime: computeUptimeStats(monitor.pageId) });
 });
 
 // GET /api/dashboard-summary — aggregate stats across all of this user's monitors,
 // for the top-of-dashboard header ("X changes across all pages this week" etc.)
-app.get("/api/dashboard-summary", (req, res) => {
-  const monitors = loadMonitors(req.uid);
-  let changesLast7Days = 0;
-  let changesLast30Days = 0;
-  let uptimeSum = 0;
-  let uptimeCount = 0;
-  let downCount = 0;
-  monitors.forEach((m) => {
-    const stats = computeMonitorStats(m.url);
-    changesLast7Days += stats.changesLast7Days;
-    changesLast30Days += stats.changesLast30Days;
-    const uptime = computeUptimeStats(m.pageId);
-    if (uptime) {
-      if (uptime.currentStatus === "down") downCount++;
-      if (uptime.last7Days) { uptimeSum += uptime.last7Days.uptimePercent; uptimeCount++; }
+app.get("/api/dashboard-summary", requireAuth, async (req, res) => {
+  try {
+    const monitors = await loadMonitorsAsync(req);
+    let changesLast7Days = 0;
+    let changesLast30Days = 0;
+    let uptimeSum = 0;
+    let uptimeCount = 0;
+    let downCount = 0;
+    for (const m of monitors) {
+      const stats = await computeMonitorStatsAsync(req, m);
+      changesLast7Days += stats.changesLast7Days;
+      changesLast30Days += stats.changesLast30Days;
+      const uptime = await computeUptimeStatsAsync(req, m.pageId);
+      if (uptime) {
+        if (uptime.currentStatus === "down") downCount++;
+        if (uptime.last7Days) { uptimeSum += uptime.last7Days.uptimePercent; uptimeCount++; }
+      }
     }
-  });
-  res.json({
-    totalMonitors: monitors.length,
-    cap: FREE_MONITOR_CAP,
-    changesLast7Days,
-    changesLast30Days,
-    avgUptimeLast7Days: uptimeCount ? Math.round((uptimeSum / uptimeCount) * 100) / 100 : null,
-    pagesDown: downCount,
-  });
+    res.json({
+      totalMonitors: monitors.length,
+      cap: FREE_MONITOR_CAP,
+      changesLast7Days,
+      changesLast30Days,
+      avgUptimeLast7Days: uptimeCount ? Math.round((uptimeSum / uptimeCount) * 100) / 100 : null,
+      pagesDown: downCount,
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
 });
 
 // GET /api/activity-feed — recent change events across ALL of this user's monitors,
 // most recent first. Powers the dashboard Overview panel's activity list.
-app.get("/api/activity-feed", (req, res) => {
-  const monitors = loadMonitors(req.uid);
-  const events = [];
-  monitors.forEach((m) => {
-    const history = loadHistory(m.url);
-    for (let i = 1; i < history.length; i++) {
-      const diff = diffSnapshots(history[i - 1], history[i]);
-      if (diff.hasChanges) {
-        events.push({ url: m.url, at: history[i].fetchedAt, impact: diff.impact.level, score: diff.impact.score, summary: diff.impact.reasons[0] || "Content updated" });
+app.get("/api/activity-feed", requireAuth, async (req, res) => {
+  try {
+    const monitors = await loadMonitorsAsync(req);
+    const events = [];
+    for (const m of monitors) {
+      const history = await loadMonitorHistoryAsync(req, m);
+      for (let i = 1; i < history.length; i++) {
+        const diff = diffSnapshots(history[i - 1], history[i]);
+        if (diff.hasChanges) {
+          events.push({ url: m.url, at: history[i].fetchedAt, impact: diff.impact.level, score: diff.impact.score, summary: diff.impact.reasons[0] || "Content updated" });
+        }
       }
     }
-  });
-  events.sort((a, b) => new Date(b.at) - new Date(a.at));
-  res.json({ events: events.slice(0, 20) });
+    events.sort((a, b) => new Date(b.at) - new Date(a.at));
+    res.json({ events: events.slice(0, 20) });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
 });
 
 // GET /api/changes-per-day — daily change counts across all monitors for the last
 // 14 days, for the Overview bar chart.
-app.get("/api/changes-per-day", (req, res) => {
-  const monitors = loadMonitors(req.uid);
-  const days = 14;
-  const counts = {};
-  for (let d = days - 1; d >= 0; d--) {
-    const key = new Date(Date.now() - d * 86400000).toISOString().slice(0, 10);
-    counts[key] = 0;
-  }
-  monitors.forEach((m) => {
-    const history = loadHistory(m.url);
-    for (let i = 1; i < history.length; i++) {
-      const diff = diffSnapshots(history[i - 1], history[i]);
-      if (!diff.hasChanges) continue;
-      const key = history[i].fetchedAt.slice(0, 10);
-      if (key in counts) counts[key]++;
+app.get("/api/changes-per-day", requireAuth, async (req, res) => {
+  try {
+    const monitors = await loadMonitorsAsync(req);
+    const days = 14;
+    const counts = {};
+    for (let d = days - 1; d >= 0; d--) {
+      const key = new Date(Date.now() - d * 86400000).toISOString().slice(0, 10);
+      counts[key] = 0;
     }
-  });
-  res.json({ labels: Object.keys(counts), values: Object.values(counts) });
+    for (const m of monitors) {
+      const history = await loadMonitorHistoryAsync(req, m);
+      for (let i = 1; i < history.length; i++) {
+        const diff = diffSnapshots(history[i - 1], history[i]);
+        if (!diff.hasChanges) continue;
+        const key = history[i].fetchedAt.slice(0, 10);
+        if (key in counts) counts[key]++;
+      }
+    }
+    res.json({ labels: Object.keys(counts), values: Object.values(counts) });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
 });
 
 

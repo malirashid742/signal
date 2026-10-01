@@ -76,4 +76,28 @@ async function sendSlackAlert({ webhookUrl, url, diff }) {
   if (!res.ok) throw new Error(`Slack webhook failed: ${res.status}`);
 }
 
-module.exports = { sendChangeAlert, sendSlackAlert };
+// Real Discord incoming-webhook sender — same pattern as Slack. User pastes their
+// own webhook URL (Server Settings -> Integrations -> Webhooks); no Discord app
+// approval needed since this is a standard incoming webhook.
+async function sendDiscordAlert({ webhookUrl, url, diff }) {
+  const impactColor = { High: 0xb23a34, Medium: 0xe8a33d, Low: 0x294b8c, None: 0x6b7280 }[diff.impact.level] || 0x6b7280;
+  const fields = [];
+  if (diff.titleChanged) fields.push({ name: "Title", value: `~~${diff.titleChanged.from}~~ → ${diff.titleChanged.to}` });
+  if (diff.impact.reasons.length) fields.push({ name: "Why it matters", value: diff.impact.reasons.map((r) => `• ${r}`).join("\n") });
+  const embed = {
+    title: `${diff.impact.level} impact change detected`,
+    url,
+    description: `${new URL(url).hostname} — SEO Impact Score ${diff.impact.score}/100`,
+    color: impactColor,
+    fields,
+    timestamp: new Date().toISOString(),
+  };
+  const res = await fetch(webhookUrl, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ embeds: [embed] }),
+  });
+  if (!res.ok) throw new Error(`Discord webhook failed: ${res.status}`);
+}
+
+module.exports = { sendChangeAlert, sendSlackAlert, sendDiscordAlert };
