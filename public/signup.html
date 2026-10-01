@@ -9,62 +9,105 @@
 <style>
   :root{
     --ink:#0F172A; --paper:#F7F7F5; --amber:#E8A33D;
-    --muted:#6B7280; --line:#E4E2DC; --text:#1A1D23; --removed:#B23A34;
+    --muted:#6B7280; --line:#E4E2DC; --text:#1A1D23; --removed:#B23A34; --added:#1F7A4D;
   }
   *{box-sizing:border-box;}
-  body{margin:0;font-family:'Inter',sans-serif;color:var(--text);background:var(--paper);min-height:100vh;display:flex;align-items:center;justify-content:center;animation:fadeIn 0.3s ease;}
-  h1{font-family:'Space Grotesk',sans-serif;}
-  @keyframes fadeIn{from{opacity:0;}to{opacity:1;}}
+  body{margin:0;font-family:'Inter',sans-serif;color:var(--text);background:#fff;min-height:100vh;display:flex;}
+  h1,h2{font-family:'Space Grotesk',sans-serif;}
 
-  .wrap{max-width:400px;width:100%;padding:20px;}
-  .logo{font-family:'Space Grotesk';font-weight:700;font-size:20px;display:flex;align-items:center;gap:8px;margin-bottom:32px;justify-content:center;}
+  .left{flex:1;background:var(--ink);color:#fff;display:flex;flex-direction:column;justify-content:space-between;padding:48px;min-height:100vh;}
+  .logo{font-family:'Space Grotesk';font-weight:700;font-size:20px;display:flex;align-items:center;gap:8px;}
   .logo-mark{width:10px;height:10px;background:var(--amber);border-radius:2px;transform:rotate(45deg);}
+  .left-body{max-width:420px;}
+  .left-body h2{font-size:30px;line-height:1.25;margin:32px 0 16px;}
+  .left-body p.tagline{color:#CBD5E1;font-size:15px;line-height:1.6;margin:0 0 32px;}
+  .checklist{list-style:none;padding:0;margin:0;display:flex;flex-direction:column;gap:14px;}
+  .checklist li{display:flex;gap:10px;font-size:14px;color:#E2E8F0;align-items:flex-start;}
+  .checklist li svg{flex-shrink:0;margin-top:2px;}
+  .left-footer{font-size:12px;color:#94A3B8;}
 
+  .right{flex:1;display:flex;align-items:center;justify-content:center;background:var(--paper);min-height:100vh;}
+  .wrap{max-width:400px;width:100%;padding:40px 20px;}
   .card{background:#fff;border:1px solid var(--line);border-radius:12px;padding:32px;}
-  h1{font-size:22px;margin:0 0 6px;text-align:center;}
-  .sub{color:var(--muted);font-size:14px;margin:0 0 24px;text-align:center;}
+  h1{font-size:22px;margin:0 0 6px;}
+  .sub{color:var(--muted);font-size:14px;margin:0 0 24px;}
 
   label{display:block;font-size:12px;color:var(--muted);margin-bottom:5px;margin-top:14px;}
   label:first-of-type{margin-top:0;}
-  input[type=text],input[type=email]{width:100%;padding:11px 14px;font-size:14px;border:1px solid #D8D5CC;border-radius:8px;background:var(--paper);transition:border-color 0.15s;}
+  input[type=text],input[type=email],input[type=password]{width:100%;padding:11px 14px;font-size:14px;border:1px solid #D8D5CC;border-radius:8px;background:var(--paper);transition:border-color 0.15s;}
   input:focus{outline:none;border-color:var(--ink);}
   .row2{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
+  .hint{font-size:11px;color:var(--muted);margin-top:4px;}
 
   .btn-primary{width:100%;margin-top:20px;padding:12px;background:var(--ink);color:#fff;border:none;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;transition:background 0.15s;}
   .btn-primary:hover{background:#1E293B;}
   .btn-primary:disabled{background:#A3A9B4;cursor:not-allowed;}
 
+  .btn-google{width:100%;margin-top:10px;padding:11px;background:#fff;color:var(--muted);border:1px solid var(--line);border-radius:8px;font-size:14px;font-weight:600;cursor:not-allowed;display:flex;align-items:center;justify-content:center;gap:8px;}
+  .divider{display:flex;align-items:center;gap:10px;margin:18px 0;color:var(--muted);font-size:12px;}
+  .divider::before,.divider::after{content:"";flex:1;height:1px;background:var(--line);}
+
   .error-msg{font-size:13px;color:var(--removed);margin-top:10px;display:none;}
-  .footer-note{text-align:center;font-size:12px;color:var(--muted);margin-top:16px;}
-  .footer-note a{color:var(--ink);}
+  .success-msg{font-size:13px;color:var(--added);margin-top:10px;display:none;}
+  .footer-note{text-align:center;font-size:13px;color:var(--muted);margin-top:20px;}
+  .footer-note a{color:var(--ink);font-weight:600;text-decoration:none;}
+
+  @media (max-width: 860px){ .left{display:none;} }
 </style>
 </head>
 <body>
 
-<div class="wrap">
+<div class="left">
   <div class="logo"><span class="logo-mark"></span>Signal</div>
-  <div class="card">
-    <h1>Create your account</h1>
-    <p class="sub">Free forever for up to 3 pages. No card required.</p>
+  <div class="left-body">
+    <h2>Know the moment<br>your competitors move.</h2>
+    <p class="tagline">Track any page for content changes, SEO impact, screenshots, and uptime — then tell us where you noticed the gap.</p>
+    <ul class="checklist">
+      <li><svg width="16" height="16" viewBox="0 0 16 16"><circle cx="8" cy="8" r="8" fill="#E8A33D"/><path d="M4.5 8.2l2.2 2.2 4.8-5" stroke="#0F172A" stroke-width="1.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg> Word-level content diffs, not just "something changed"</li>
+      <li><svg width="16" height="16" viewBox="0 0 16 16"><circle cx="8" cy="8" r="8" fill="#E8A33D"/><path d="M4.5 8.2l2.2 2.2 4.8-5" stroke="#0F172A" stroke-width="1.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg> SEO Impact Score on every change</li>
+      <li><svg width="16" height="16" viewBox="0 0 16 16"><circle cx="8" cy="8" r="8" fill="#E8A33D"/><path d="M4.5 8.2l2.2 2.2 4.8-5" stroke="#0F172A" stroke-width="1.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg> Before/after screenshots with pixel-diff</li>
+      <li><svg width="16" height="16" viewBox="0 0 16 16"><circle cx="8" cy="8" r="8" fill="#E8A33D"/><path d="M4.5 8.2l2.2 2.2 4.8-5" stroke="#0F172A" stroke-width="1.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg> Slack + Discord + email alerts</li>
+      <li><svg width="16" height="16" viewBox="0 0 16 16"><circle cx="8" cy="8" r="8" fill="#E8A33D"/><path d="M4.5 8.2l2.2 2.2 4.8-5" stroke="#0F172A" stroke-width="1.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg> Free forever for up to 3 pages</li>
+    </ul>
+  </div>
+  <div class="left-footer">© 2026 Signal</div>
+</div>
 
-    <div class="row2">
-      <div>
-        <label>First name</label>
-        <input type="text" id="firstName" placeholder="Muhammad" />
+<div class="right">
+  <div class="wrap">
+    <div class="card">
+      <h1>Create your account</h1>
+      <p class="sub">Free forever for up to 3 pages. No card required.</p>
+
+      <div class="row2">
+        <div>
+          <label>First name</label>
+          <input type="text" id="firstName" placeholder="Muhammad" autocomplete="given-name" />
+        </div>
+        <div>
+          <label>Last name</label>
+          <input type="text" id="lastName" placeholder="Ali" autocomplete="family-name" />
+        </div>
       </div>
-      <div>
-        <label>Last name</label>
-        <input type="text" id="lastName" placeholder="Ali" />
-      </div>
+
+      <label>Email address</label>
+      <input type="email" id="email" placeholder="you@company.com" autocomplete="email" />
+
+      <label>Password</label>
+      <input type="password" id="password" placeholder="At least 6 characters" autocomplete="new-password" />
+      <div class="hint">6+ characters.</div>
+
+      <button class="btn-primary" id="signupBtn">Create account</button>
+
+      <div class="divider">or</div>
+      <button class="btn-google" disabled title="Coming soon">Continue with Google (coming soon)</button>
+
+      <div class="error-msg" id="errorMsg"></div>
+      <div class="success-msg" id="successMsg"></div>
+
+      <div class="footer-note">Already have an account? <a href="/login.html">Log in</a></div>
+      <div class="footer-note">Just want to look around? <a href="/demo">Try the demo</a></div>
     </div>
-
-    <label>Email address</label>
-    <input type="email" id="email" placeholder="you@company.com" />
-
-    <button class="btn-primary" id="signupBtn">Create account</button>
-    <div class="error-msg" id="errorMsg"></div>
-
-    <div class="footer-note">Already have an account? <a href="/dashboard.html">Go to dashboard</a></div>
   </div>
 </div>
 
@@ -73,24 +116,33 @@ document.getElementById('signupBtn').addEventListener('click', async () => {
   const firstName = document.getElementById('firstName').value.trim();
   const lastName = document.getElementById('lastName').value.trim();
   const email = document.getElementById('email').value.trim();
+  const password = document.getElementById('password').value;
   const errorMsg = document.getElementById('errorMsg');
+  const successMsg = document.getElementById('successMsg');
   const btn = document.getElementById('signupBtn');
 
-  if (!firstName || !email) {
-    errorMsg.textContent = 'First name and email are required.';
+  errorMsg.style.display = 'none';
+  successMsg.style.display = 'none';
+
+  if (!firstName || !email || !password) {
+    errorMsg.textContent = 'First name, email, and password are required.';
+    errorMsg.style.display = 'block';
+    return;
+  }
+  if (password.length < 6) {
+    errorMsg.textContent = 'Password must be at least 6 characters.';
     errorMsg.style.display = 'block';
     return;
   }
 
   btn.disabled = true;
   btn.textContent = 'Creating account...';
-  errorMsg.style.display = 'none';
 
   try {
-    const res = await fetch('/api/profile', {
+    const res = await fetch('/api/auth/signup', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ firstName, lastName, email }),
+      body: JSON.stringify({ firstName, lastName, email, password }),
     });
     const data = await res.json();
     if (!res.ok) {
@@ -98,7 +150,11 @@ document.getElementById('signupBtn').addEventListener('click', async () => {
       errorMsg.style.display = 'block';
       return;
     }
-    // New account → straight into the use-case onboarding step, then dashboard.
+    if (data.needsConfirmation) {
+      successMsg.textContent = data.message || 'Check your email to confirm your account, then log in.';
+      successMsg.style.display = 'block';
+      return;
+    }
     window.location.href = '/onboarding.html';
   } catch (e) {
     errorMsg.textContent = 'Network error. Try again.';

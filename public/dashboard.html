@@ -186,6 +186,7 @@
         <div class="user-name" id="sidebarName">Your Profile</div>
         <div class="user-plan" id="sidebarPlan">Free plan</div>
       </div>
+      <a href="#" style="font-size:11px;color:#9CA3AF;margin-left:auto;" onclick="event.stopPropagation(); event.preventDefault(); logout();">Log out</a>
     </div>
     <div class="workspace-row">
       <span>My Workspace</span>
@@ -572,16 +573,35 @@ document.getElementById('enableNotifsBtn').addEventListener('click', async () =>
   }
 });
 
+async function logout() {
+  try { await fetch('/api/auth/logout', { method: 'POST' }); } catch (e) {}
+  window.location.href = '/login.html';
+}
+
 function escapeHtml(s) {
   return String(s || '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 }
 
-if (document.cookie.includes('uid=demo-user')) {
+if (document.cookie.includes('demo_mode=1')) {
   document.getElementById('demoBadge').style.display = 'inline-block';
 }
-loadMonitors();
-loadOverview();
-loadSidebarProfile();
+
+// Gate the dashboard behind real auth or demo mode — anything else (expired
+// session, never signed in) bounces to login instead of silently 401ing on
+// every API call.
+(async function initDashboard() {
+  try {
+    const res = await fetch('/api/auth/session');
+    const data = await res.json();
+    if (!data.authenticated) {
+      window.location.href = '/login.html';
+      return;
+    }
+  } catch (e) {}
+  loadMonitors();
+  loadOverview();
+  loadSidebarProfile();
+})();
 
 async function loadSidebarProfile() {
   try {
