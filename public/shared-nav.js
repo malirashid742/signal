@@ -5,7 +5,7 @@
 // someone is inside the logged-in product rather than browsing the marketing site.
 
 const SIGNAL_HEADER_HTML = `
-<header class="sg-header">
+<header class="sg-header" id="sgHeader">
   <div class="sg-header-inner">
     <a href="/" class="sg-logo"><span class="sg-logo-mark"></span>Signal<span class="sg-beta-badge">BETA</span></a>
     <nav class="sg-nav">
@@ -31,9 +31,9 @@ const SIGNAL_HEADER_HTML = `
     </nav>
     <div class="sg-header-cta">
       <a href="/demo" class="sg-link-btn">View demo</a>
-      <a href="/signup.html" class="sg-fill-btn">Sign up →</a>
+      <a href="/signup.html" class="sg-fill-btn">Start free →</a>
     </div>
-    <button class="sg-mobile-toggle" id="sgMobileToggle">☰</button>
+    <button class="sg-mobile-toggle" id="sgMobileToggle" aria-label="Menu">☰</button>
   </div>
   <div class="sg-mobile-menu" id="sgMobileMenu">
     <a href="/dashboard.html">Dashboard</a>
@@ -45,24 +45,29 @@ const SIGNAL_HEADER_HTML = `
     <a href="/privacy.html">Privacy</a>
     <a href="/terms.html">Terms</a>
     <a href="/demo">View demo</a>
-    <a href="/signup.html" class="sg-mobile-cta">Sign up →</a>
+    <a href="/signup.html" class="sg-mobile-cta">Start free →</a>
   </div>
 </header>
 `;
 
 const SIGNAL_FOOTER_HTML = `
 <footer class="sg-footer">
+  <div class="sg-footer-accent"></div>
   <div class="sg-footer-inner">
     <div class="sg-footer-col sg-footer-brand">
       <div class="sg-logo"><span class="sg-logo-mark"></span>Signal</div>
-      <p>A focused competitor change tracker for SEOs and content teams.</p>
+      <p>A focused competitor change tracker for SEOs and content teams — SEO impact scoring, screenshot diffs, and uptime, in one dashboard.</p>
     </div>
     <div class="sg-footer-col">
       <h4>Product</h4>
       <a href="/dashboard.html">Dashboard</a>
-      <a href="/#tool">Free page check</a>
-      <a href="/leaderboard">Leaderboard</a>
       <a href="/subscription.html">Pricing</a>
+    </div>
+    <div class="sg-footer-col">
+      <h4>Resources</h4>
+      <a href="/#tool">Free page check</a>
+      <a href="/leaderboard">Velocity leaderboard</a>
+      <a href="/demo">Live demo</a>
     </div>
     <div class="sg-footer-col">
       <h4>Company</h4>
@@ -71,27 +76,27 @@ const SIGNAL_FOOTER_HTML = `
       <a href="/privacy.html">Privacy Policy</a>
       <a href="/terms.html">Terms of Service</a>
     </div>
-    <div class="sg-footer-col">
-      <h4>Account</h4>
-      <a href="/signup.html">Sign up</a>
-      <a href="/demo">View demo</a>
-      <a href="/dashboard.html">Dashboard</a>
-    </div>
   </div>
-  <div class="sg-footer-bottom">© 2026 Signal. Independent project, not affiliated with the SEO tools it complements.</div>
+  <div class="sg-footer-bottom">
+    <span>© 2026 Signal. Independent project, not affiliated with the SEO tools it complements.</span>
+    <span class="sg-status"><span class="sg-status-dot"></span>All systems operational</span>
+  </div>
 </footer>
 `;
 
 const SIGNAL_HEADER_FOOTER_CSS = `
 <style>
-  .sg-header{background:#fff;border-bottom:1px solid var(--line, #E4E2DC);position:relative;z-index:100;}
+  .sg-header{background:#fff;border-bottom:1px solid var(--line, #E4E2DC);position:sticky;top:0;z-index:100;transition:box-shadow 0.2s ease;}
+  .sg-header.sg-scrolled{box-shadow:0 4px 20px rgba(15,23,42,0.08);}
   .sg-header-inner{max-width:1100px;margin:0 auto;padding:16px 24px;display:flex;align-items:center;gap:32px;}
   .sg-logo{font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:19px;color:var(--ink,#0F172A);display:flex;align-items:center;gap:8px;text-decoration:none;}
-  .sg-logo-mark{width:10px;height:10px;background:var(--amber,#E8A33D);border-radius:2px;transform:rotate(45deg);flex-shrink:0;}
+  .sg-logo-mark{width:10px;height:10px;background:var(--amber,#E8A33D);border-radius:2px;transform:rotate(45deg);flex-shrink:0;transition:transform 0.3s ease;}
+  .sg-logo:hover .sg-logo-mark{transform:rotate(225deg);}
   .sg-beta-badge{font-family:'Inter',sans-serif;font-size:10px;font-weight:700;background:var(--ink,#0F172A);color:#fff;padding:2px 7px;border-radius:8px;margin-left:6px;vertical-align:middle;letter-spacing:0.03em;}
   .sg-nav{display:flex;gap:8px;flex:1;}
   .sg-nav-item{position:relative;padding:10px 14px;font-size:14px;font-weight:500;color:var(--text,#1A1D23);cursor:pointer;text-decoration:none;border-radius:6px;transition:background 0.15s;}
   .sg-nav-item:hover{background:var(--paper,#F7F7F5);}
+  .sg-nav-item.sg-active{color:var(--amber,#E8A33D);font-weight:600;}
   .sg-mega{display:none;position:absolute;top:100%;left:0;background:#fff;border:1px solid var(--line,#E4E2DC);border-radius:10px;box-shadow:0 12px 32px rgba(15,23,42,0.12);padding:12px;min-width:280px;grid-template-columns:1fr;gap:2px;margin-top:6px;}
   .sg-mega a{display:block;padding:10px 12px;border-radius:7px;text-decoration:none;transition:background 0.15s;}
   .sg-mega a:hover{background:var(--paper,#F7F7F5);}
@@ -116,14 +121,17 @@ const SIGNAL_HEADER_FOOTER_CSS = `
   }
 
   .sg-footer{background:var(--ink,#0F172A);color:#B6BDCB;margin-top:0;}
+  .sg-footer-accent{height:3px;background:linear-gradient(90deg,var(--amber,#E8A33D),#f0ae4d,transparent);}
   .sg-footer-inner{max-width:1100px;margin:0 auto;padding:48px 24px 24px;display:grid;grid-template-columns:1.4fr 1fr 1fr 1fr;gap:32px;}
   @media(max-width:760px){.sg-footer-inner{grid-template-columns:1fr 1fr;}}
   .sg-footer-brand .sg-logo{color:#fff;margin-bottom:10px;}
-  .sg-footer-brand p{font-size:13px;color:#7C8496;margin:0;line-height:1.6;}
+  .sg-footer-brand p{font-size:13px;color:#7C8496;margin:0;line-height:1.6;max-width:320px;}
   .sg-footer-col h4{font-size:12px;text-transform:uppercase;letter-spacing:0.04em;color:#7C8496;margin:0 0 12px;font-weight:600;}
   .sg-footer-col a{display:block;font-size:14px;color:#B6BDCB;text-decoration:none;margin-bottom:9px;transition:color 0.15s;}
   .sg-footer-col a:hover{color:#fff;}
-  .sg-footer-bottom{max-width:1100px;margin:0 auto;padding:20px 24px;border-top:1px solid #1E293B;font-size:12px;color:#7C8496;}
+  .sg-footer-bottom{max-width:1100px;margin:0 auto;padding:20px 24px;border-top:1px solid #1E293B;font-size:12px;color:#7C8496;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;}
+  .sg-status{display:inline-flex;align-items:center;gap:6px;color:#7C8496;}
+  .sg-status-dot{width:7px;height:7px;border-radius:50%;background:#22C55E;box-shadow:0 0 0 2px rgba(34,197,94,0.2);}
 </style>
 `;
 
@@ -139,4 +147,18 @@ document.addEventListener('DOMContentLoaded', () => {
   if (toggle && mobileMenu) {
     toggle.addEventListener('click', () => mobileMenu.classList.toggle('open'));
   }
+
+  // Shadow-on-scroll header (Visualping/ChangeTower-style sticky nav affordance)
+  const header = document.getElementById('sgHeader');
+  if (header) {
+    const onScroll = () => header.classList.toggle('sg-scrolled', window.scrollY > 4);
+    window.addEventListener('scroll', onScroll, { passive: true });
+    onScroll();
+  }
+
+  // Highlight the current section in the nav (Pricing, Company menu items)
+  const path = window.location.pathname;
+  document.querySelectorAll('.sg-nav-item[href]').forEach((a) => {
+    if (a.getAttribute('href') === path) a.classList.add('sg-active');
+  });
 });
