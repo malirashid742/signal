@@ -85,6 +85,14 @@ functions (`cron_list_monitors`, `cron_insert_snapshot`,
   Settings → API)
 - `GMAIL_USER`, `GMAIL_APP_PASSWORD` (email alerts)
 - `DISABLE_SCREENSHOTS=1` (already set — free tier RAM limit)
+- `LEMONSQUEEZY_CHECKOUT_URL` = your store's hosted checkout link for the Pro
+  variant, e.g. `https://yourstore.lemonsqueezy.com/buy/VARIANT_ID` (Stripe is
+  blocked in Pakistan — using Lemon Squeezy as merchant-of-record instead)
+- `LEMONSQUEEZY_WEBHOOK_SECRET` = the signing secret you set when adding the
+  webhook in Lemon Squeezy dashboard (Settings → Webhooks → point it at
+  `https://<your-render-url>/api/webhooks/lemonsqueezy`, subscribe to
+  `subscription_created`, `subscription_updated`, `subscription_cancelled`,
+  `subscription_expired`)
 
 ## Status as of this handoff
 **Done:**

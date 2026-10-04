@@ -11,6 +11,58 @@ const { captureScreenshot, compareScreenshots } = require("./screenshot");
 const { supabase, createUserClient } = require("./supabaseClient");
 
 const app = express();
+
+// Lemon Squeezy webhook — registered BEFORE express.json() because signature
+// verification needs the exact raw request bytes; express.json() would parse
+// and discard that raw form before this route ever saw it.
+app.post("/api/webhooks/lemonsqueezy", express.raw({ type: "application/json" }), async (req, res) => {
+  const secret = process.env.LEMONSQUEEZY_WEBHOOK_SECRET;
+  if (!secret) return res.status(500).send("Webhook not configured.");
+
+  const signature = req.get("X-Signature") || "";
+  const expected = crypto.createHmac("sha256", secret).update(req.body).digest("hex");
+  const sigBuf = Buffer.from(signature, "hex");
+  const expBuf = Buffer.from(expected, "hex");
+  if (sigBuf.length !== expBuf.length || !crypto.timingSafeEqual(sigBuf, expBuf)) {
+    return res.status(401).send("Invalid signature.");
+  }
+
+  let payload;
+  try {
+    payload = JSON.parse(req.body.toString("utf8"));
+  } catch (e) {
+    return res.status(400).send("Bad payload.");
+  }
+
+  try {
+    const eventName = payload.meta?.event_name;
+    const userId = payload.meta?.custom_data?.user_id;
+    const attrs = payload.data?.attributes || {};
+    if (!userId) {
+      console.error("Lemon Squeezy webhook: no user_id in custom_data — was it passed at checkout?");
+      return res.status(200).send("No user_id, ignored.");
+    }
+
+    const activeStates = ["active", "on_trial"];
+    const plan = activeStates.includes(attrs.status) ? "Pro" : "Free";
+
+    await supabase.rpc("webhook_apply_subscription", {
+      p_user_id: userId,
+      p_plan: plan,
+      p_status: attrs.status || eventName || "unknown",
+      p_external_customer_id: String(attrs.customer_id || ""),
+      p_external_subscription_id: String(payload.data?.id || ""),
+      p_current_period_end: attrs.renews_at || attrs.ends_at || null,
+    });
+
+    console.log(`Lemon Squeezy webhook: user ${userId} -> plan ${plan} (${eventName})`);
+    res.status(200).send("OK");
+  } catch (e) {
+    console.error("Lemon Squeezy webhook error:", e.message);
+    res.status(500).send("Webhook processing failed.");
+  }
+});
+
 app.use(express.json());
 const rateLimit = require("express-rate-limit");
 
@@ -24,6 +76,17 @@ const publicToolLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: "Too many checks from this IP. Try again in a few minutes." },
+});
+
+// Auth endpoints get a tighter limit — this is the brute-force/credential-
+// stuffing surface, not a usage-cap surface, so it's deliberately stricter and
+// separate from publicToolLimiter.
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10, // 10 signup/login/reset attempts per IP per 15 min
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Too many attempts. Try again in a few minutes." },
 });
 app.use(cookieParser());
 app.use(express.static(path.join(__dirname, "public")));
@@ -93,7 +156,7 @@ function requireAuth(req, res, next) {
 // profiles table later for email marketing, no code needed — just Supabase
 // Table Editor -> profiles -> Export CSV). Name is passed as auth user_metadata so
 // the on-signup DB trigger saves it even before email confirmation completes.
-app.post("/api/auth/signup", async (req, res) => {
+app.post("/api/auth/signup", authLimiter, async (req, res) => {
   const { email, password, firstName, lastName } = req.body;
   if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return res.status(400).json({ error: "Provide a valid email address." });
   if (!password || password.length < 6) return res.status(400).json({ error: "Password must be at least 6 characters." });
@@ -115,7 +178,7 @@ app.post("/api/auth/signup", async (req, res) => {
   res.json({ ok: true, needsConfirmation: true, message: "Check your email to confirm your account, then log in." });
 });
 
-app.post("/api/auth/login", async (req, res) => {
+app.post("/api/auth/login", authLimiter, async (req, res) => {
   const { email, password } = req.body;
   if (!email || !password) return res.status(400).json({ error: "Email and password are required." });
   const { data, error } = await supabase.auth.signInWithPassword({ email, password });
@@ -129,10 +192,63 @@ app.post("/api/auth/logout", (req, res) => {
   res.json({ ok: true });
 });
 
+// POST /api/auth/forgot-password — body: { email }. Always returns ok:true
+// regardless of whether the email exists, so this can't be used to enumerate
+// registered accounts.
+app.post("/api/auth/forgot-password", authLimiter, async (req, res) => {
+  const { email } = req.body;
+  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    return res.status(400).json({ error: "Provide a valid email address." });
+  }
+  try {
+    await supabase.auth.resetPasswordForEmail(email, { redirectTo: `${req.protocol}://${req.get("host")}/reset-password.html` });
+  } catch (e) {
+    console.error("Password reset request failed:", e.message);
+  }
+  res.json({ ok: true, message: "If that email has an account, a reset link is on its way." });
+});
+
+// POST /api/auth/reset-password — body: { accessToken, newPassword }. accessToken
+// comes from the recovery link Supabase emails (reset-password.html reads it out
+// of the URL fragment and posts it here, since that fragment never reaches the
+// server on its own).
+app.post("/api/auth/reset-password", authLimiter, async (req, res) => {
+  const { accessToken, newPassword } = req.body;
+  if (!accessToken || !newPassword || newPassword.length < 6) {
+    return res.status(400).json({ error: "Provide the reset link's token and a password of at least 6 characters." });
+  }
+  try {
+    const userDb = createUserClient(accessToken);
+    const { error } = await userDb.auth.updateUser({ password: newPassword });
+    if (error) return res.status(400).json({ error: error.message });
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 app.get("/api/auth/session", async (req, res) => {
   if (req.isDemo) return res.json({ authenticated: true, isDemo: true });
   if (!req.userId) return res.json({ authenticated: false });
   res.json({ authenticated: true, isDemo: false, userId: req.userId });
+});
+
+// GET /api/billing/checkout-url — builds a Lemon Squeezy hosted-checkout link
+// for this signed-in user's upgrade, with user_id passed through as custom
+// data so the webhook can tie the resulting subscription back to them.
+app.get("/api/billing/checkout-url", requireAuth, async (req, res) => {
+  if (req.isDemo) return res.status(400).json({ error: "Upgrade isn't available in demo mode — create a real account first." });
+  const base = process.env.LEMONSQUEEZY_CHECKOUT_URL; // e.g. https://yourstore.lemonsqueezy.com/buy/VARIANT_ID
+  if (!base) return res.status(500).json({ error: "Billing isn't configured yet." });
+  try {
+    const profile = await loadProfileAsync(req);
+    const url = new URL(base);
+    url.searchParams.set("checkout[email]", profile.email || "");
+    url.searchParams.set("checkout[custom][user_id]", req.userId);
+    res.json({ url: url.toString() });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
 });
 
 // GET /demo — switches this browser into demo mode (seeded, file-based sample
@@ -359,6 +475,7 @@ function mapMonitorRow(row) {
     channels: row.channels || ["email"],
     slackWebhook: row.slack_webhook,
     discordWebhook: row.discord_webhook,
+    selector: row.selector || null,
     status: row.status,
     createdAt: row.created_at,
     lastCheckedAt: row.last_checked_at,
@@ -389,6 +506,7 @@ async function insertMonitorAsync(req, monitor) {
     channels: monitor.channels,
     slack_webhook: monitor.slackWebhook,
     discord_webhook: monitor.discordWebhook,
+    selector: monitor.selector,
     status: monitor.status,
   }).select().single();
   if (error) throw error;
@@ -560,6 +678,11 @@ app.post("/api/profile", requireAuth, async (req, res) => {
 });
 
 const FREE_MONITOR_CAP = 3;
+const PRO_MONITOR_CAP = 50; // Pro plan — paid via Lemon Squeezy
+
+function capFor(plan) {
+  return plan === "Pro" ? PRO_MONITOR_CAP : FREE_MONITOR_CAP;
+}
 
 // Computes "how many changes in the last N days" for a monitor, plus total checks —
 // this is what makes the dashboard feel mature instead of just a raw event list.
@@ -610,23 +733,28 @@ app.get("/api/monitors", requireAuth, async (req, res) => {
   try {
     const monitors = await loadMonitorsAsync(req);
     const withStats = await Promise.all(monitors.map(async (m) => ({ ...m, stats: await computeMonitorStatsAsync(req, m) })));
-    res.json({ monitors: withStats, cap: FREE_MONITOR_CAP });
+    const profile = await loadProfileAsync(req);
+    res.json({ monitors: withStats, cap: capFor(profile.plan) });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
 });
 
 // POST /api/monitors — add a new monitored page
-// body: { url, condition, frequency, channels, slackWebhook, discordWebhook }
+// body: { url, condition, frequency, channels, slackWebhook, discordWebhook, selector }
+// selector (optional): a CSS selector to track just one element (price, stock
+// status, a specific section) instead of the whole page.
 app.post("/api/monitors", requireAuth, async (req, res) => {
-  const { url, condition, frequency, channels, slackWebhook, discordWebhook } = req.body;
+  const { url, condition, frequency, channels, slackWebhook, discordWebhook, selector } = req.body;
   if (!url || !/^https?:\/\//.test(url)) {
     return res.status(400).json({ error: "Provide a valid URL." });
   }
   try {
     const existing = await loadMonitorsAsync(req);
-    if (existing.length >= FREE_MONITOR_CAP) {
-      return res.status(402).json({ error: `Free plan allows ${FREE_MONITOR_CAP} monitored pages. Upgrade to add more.`, capReached: true });
+    const profile = await loadProfileAsync(req);
+    const cap = capFor(profile.plan);
+    if (existing.length >= cap) {
+      return res.status(402).json({ error: `${profile.plan} plan allows ${cap} monitored pages. Upgrade to add more.`, capReached: true });
     }
     const monitor = {
       id: uuidv4(),
@@ -637,6 +765,7 @@ app.post("/api/monitors", requireAuth, async (req, res) => {
       channels: channels || ["email"],
       slackWebhook: slackWebhook || null,
       discordWebhook: discordWebhook || null,
+      selector: selector ? selector.trim() : null,
       status: "checking",
       createdAt: new Date().toISOString(),
     };
@@ -677,7 +806,7 @@ app.post("/api/monitors/:id/check", requireAuth, async (req, res) => {
       return res.json({ mode: "down", status: pageResult.status, error: pageResult.error, uptime: await computeUptimeStatsAsync(req, monitor.pageId) });
     }
 
-    const snap = extractData(pageResult.html, monitor.url);
+    const snap = extractData(pageResult.html, monitor.url, monitor.selector);
     const history = await loadMonitorHistoryAsync(req, monitor);
     const last = history[history.length - 1];
 
@@ -775,9 +904,10 @@ app.get("/api/dashboard-summary", requireAuth, async (req, res) => {
         if (uptime.last7Days) { uptimeSum += uptime.last7Days.uptimePercent; uptimeCount++; }
       }
     }
+    const profile = await loadProfileAsync(req);
     res.json({
       totalMonitors: monitors.length,
-      cap: FREE_MONITOR_CAP,
+      cap: capFor(profile.plan),
       changesLast7Days,
       changesLast30Days,
       avgUptimeLast7Days: uptimeCount ? Math.round((uptimeSum / uptimeCount) * 100) / 100 : null,
@@ -1196,6 +1326,25 @@ function summarize(snap) {
 // Cheap, dependency-free health check for the host's port scan / health probe.
 // Must not touch disk or the browser so it always answers fast.
 app.get("/healthz", (req, res) => res.status(200).json({ ok: true, uptime: process.uptime() }));
+
+// Catch-all 404s — must be registered after every real route. JSON for API
+// calls, a small branded page for everything else (someone following a dead
+// link, mistyped URL, etc).
+app.use((req, res) => {
+  if (req.path.startsWith("/api/")) return res.status(404).json({ error: "Not found." });
+  res.status(404).send(renderShell("Page not found", `
+    <h1>404 — Page not found</h1>
+    <p>That page doesn't exist. <a href="/">Back to Signal</a></p>
+  `));
+});
+
+// Last-resort error handler — anything that throws synchronously or calls
+// next(err) lands here instead of taking the whole process down.
+app.use((err, req, res, next) => {
+  console.error("Unhandled error:", err);
+  if (req.path.startsWith("/api/")) return res.status(500).json({ error: "Something went wrong." });
+  res.status(500).send(renderShell("Error", `<h1>Something went wrong</h1><p><a href="/">Back to Signal</a></p>`));
+});
 
 const PORT = process.env.PORT || 3000;
 // Bind 0.0.0.0 explicitly — hosts route external traffic to the container's

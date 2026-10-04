@@ -36,15 +36,32 @@ async function fetchPageWithMeta(url, timeoutMs = 15000) {
 }
 
 // ---------- PAGE EXTRACTION ----------
-function extractData(html, baseUrl) {
+// selector (optional): a CSS selector scoping extraction to one element instead
+// of the whole page — e.g. ".price", "#stock-status" — for tracking one widget
+// (price, availability, a specific section) rather than the full document.
+// Falls back to whole-page extraction if the selector matches nothing, and
+// reports that fallback via selectorMatched so the UI/alerts can say so.
+function extractData(html, baseUrl, selector) {
   const $ = cheerio.load(html);
   const origin = new URL(baseUrl).origin;
 
   const title = $("title").first().text().trim();
   const metaDesc = $('meta[name="description"]').attr("content") || "";
-  const h1 = $("h1").map((_, el) => $(el).text().trim()).get();
-  const h2 = $("h2").map((_, el) => $(el).text().trim()).get();
-  const bodyClone = $("body").clone();
+
+  let scope = $("body");
+  let selectorMatched = true;
+  if (selector) {
+    const matched = $(selector);
+    if (matched.length) {
+      scope = matched;
+    } else {
+      selectorMatched = false;
+    }
+  }
+
+  const h1 = scope.find("h1").map((_, el) => $(el).text().trim()).get();
+  const h2 = scope.find("h2").map((_, el) => $(el).text().trim()).get();
+  const bodyClone = scope.clone();
   bodyClone.find("script,style,noscript").remove();
   // insert a space after every element so adjacent tags (e.g. <h1><h2>) don't
   // have their text concatenated with no boundary — keeps word-diff snippets clean
@@ -68,7 +85,7 @@ function extractData(html, baseUrl) {
 
   const internalLinks = new Set();
   const externalLinks = new Set();
-  $("a[href]").each((_, el) => {
+  scope.find("a[href]").each((_, el) => {
     const href = $(el).attr("href");
     if (!href || href.startsWith("#") || href.startsWith("mailto:") || href.startsWith("tel:")) return;
     try {
@@ -81,7 +98,7 @@ function extractData(html, baseUrl) {
   });
 
   const images = new Set();
-  $("img[src]").each((_, el) => {
+  scope.find("img[src]").each((_, el) => {
     const src = $(el).attr("src");
     const alt = $(el).attr("alt") || "";
     if (!src) return;
@@ -104,6 +121,7 @@ function extractData(html, baseUrl) {
     internalLinks: [...internalLinks].sort(),
     externalLinks: [...externalLinks].sort(),
     images: [...images].sort(),
+    selectorMatched,
   };
 }
 
