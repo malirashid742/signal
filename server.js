@@ -4,7 +4,7 @@ const path = require("path");
 const crypto = require("crypto");
 const cookieParser = require("cookie-parser");
 const { v4: uuidv4 } = require("uuid");
-const { fetchPage, fetchPageWithMeta, extractData, diffSnapshots, fetchSitemapUrls, diffSitemap, publishingVelocity, outreachOpportunities, checkLinksInPool } = require("./engine");
+const { fetchPage, fetchPageWithMeta, extractData, diffSnapshots, fetchSitemapUrls, diffSitemap, publishingVelocity, outreachOpportunities, checkLinksInPool, impactMeetsThreshold } = require("./engine");
 const { generateShareCard } = require("./sharecard");
 const { sendSlackAlert, sendDiscordAlert } = require("./alerts");
 const { captureScreenshot, compareScreenshots } = require("./screenshot");
@@ -476,6 +476,8 @@ function mapMonitorRow(row) {
     slackWebhook: row.slack_webhook,
     discordWebhook: row.discord_webhook,
     selector: row.selector || null,
+    minImpact: row.min_impact || "Low",
+    autoPause: !!row.auto_pause,
     status: row.status,
     createdAt: row.created_at,
     lastCheckedAt: row.last_checked_at,
@@ -507,6 +509,8 @@ async function insertMonitorAsync(req, monitor) {
     slack_webhook: monitor.slackWebhook,
     discord_webhook: monitor.discordWebhook,
     selector: monitor.selector,
+    min_impact: monitor.minImpact || "Low",
+    auto_pause: !!monitor.autoPause,
     status: monitor.status,
   }).select().single();
   if (error) throw error;
@@ -532,6 +536,8 @@ async function updateMonitorAsync(req, id, fields) {
   const dbFields = {};
   if (fields.status !== undefined) dbFields.status = fields.status;
   if (fields.lastCheckedAt !== undefined) dbFields.last_checked_at = fields.lastCheckedAt;
+  if (fields.minImpact !== undefined) dbFields.min_impact = fields.minImpact;
+  if (fields.autoPause !== undefined) dbFields.auto_pause = fields.autoPause;
   const { error } = await req.db.from("monitors").update(dbFields).eq("id", id);
   if (error) throw error;
 }
@@ -741,11 +747,17 @@ app.get("/api/monitors", requireAuth, async (req, res) => {
 });
 
 // POST /api/monitors — add a new monitored page
-// body: { url, condition, frequency, channels, slackWebhook, discordWebhook, selector }
+// body: { url, condition, frequency, channels, slackWebhook, discordWebhook, selector, minImpact, autoPause }
 // selector (optional): a CSS selector to track just one element (price, stock
 // status, a specific section) instead of the whole page.
+// minImpact (optional, default "Low"): noise filter — only alert when a change's
+// SEO Impact Score is at least this level (Low/Medium/High). Closes the #1 G2
+// complaint against Visualping (alert fatigue from cookie banners/ads/trivial edits).
+// autoPause (optional, default false): pause the monitor automatically the first
+// time it fires an alert — for one-shot "tell me once, then stop" tracking
+// (price drop hit, item back in stock) so credits/checks aren't wasted after.
 app.post("/api/monitors", requireAuth, async (req, res) => {
-  const { url, condition, frequency, channels, slackWebhook, discordWebhook, selector } = req.body;
+  const { url, condition, frequency, channels, slackWebhook, discordWebhook, selector, minImpact, autoPause } = req.body;
   if (!url || !/^https?:\/\//.test(url)) {
     return res.status(400).json({ error: "Provide a valid URL." });
   }
@@ -766,11 +778,47 @@ app.post("/api/monitors", requireAuth, async (req, res) => {
       slackWebhook: slackWebhook || null,
       discordWebhook: discordWebhook || null,
       selector: selector ? selector.trim() : null,
+      minImpact: ["Low", "Medium", "High"].includes(minImpact) ? minImpact : "Low",
+      autoPause: !!autoPause,
       status: "checking",
       createdAt: new Date().toISOString(),
     };
     const saved = await insertMonitorAsync(req, monitor);
     res.json({ ok: true, monitor: saved });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// PATCH /api/monitors/:id — edit settings on an existing monitor (noise filter,
+// auto-pause, channels) without recreating it.
+app.patch("/api/monitors/:id", requireAuth, async (req, res) => {
+  try {
+    const { minImpact, autoPause, status, slackWebhook, discordWebhook, selector, condition } = req.body;
+    const fields = {};
+    if (minImpact !== undefined) fields.minImpact = minImpact;
+    if (autoPause !== undefined) fields.autoPause = autoPause;
+    if (status !== undefined) fields.status = status;
+    await updateMonitorAsync(req, req.params.id, fields);
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// POST /api/monitors/bulk — pause/resume/delete several monitors in one call.
+// body: { ids: [...], action: "pause" | "resume" | "delete" }
+// Closes a ChangeTower G2 complaint: no bulk-edit capability for multiple monitors.
+app.post("/api/monitors/bulk", requireAuth, async (req, res) => {
+  const { ids, action } = req.body;
+  if (!Array.isArray(ids) || !ids.length) return res.status(400).json({ error: "Provide monitor ids." });
+  if (!["pause", "resume", "delete"].includes(action)) return res.status(400).json({ error: "Invalid action." });
+  try {
+    for (const id of ids) {
+      if (action === "delete") await deleteMonitorAsync(req, id);
+      else await updateMonitorAsync(req, id, { status: action === "pause" ? "paused" : "active" });
+    }
+    res.json({ ok: true, count: ids.length });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
@@ -831,11 +879,16 @@ app.post("/api/monitors/:id/check", requireAuth, async (req, res) => {
     const diff = diffSnapshots(last, snap);
     const outreach = outreachOpportunities(diff);
 
+    // Noise filter — only treat this as alert-worthy if it clears the monitor's
+    // min-impact floor. Fixes Visualping's #1 G2 complaint (alert fatigue from
+    // cookie banners/ads/trivial layout tweaks).
+    const alertWorthy = diff.hasChanges && impactMeetsThreshold(diff.impact.level, monitor.minImpact || "Low");
+
     // Fire Slack/Discord alerts immediately if this monitor has webhooks configured
-    // and changes were found — best-effort, never blocks or fails the check response.
+    // and the change cleared the noise filter — best-effort, never blocks the response.
     let slackSent = false;
     let discordSent = false;
-    if (diff.hasChanges && monitor.slackWebhook) {
+    if (alertWorthy && monitor.slackWebhook) {
       try {
         await sendSlackAlert({ webhookUrl: monitor.slackWebhook, url: monitor.url, diff });
         slackSent = true;
@@ -843,7 +896,7 @@ app.post("/api/monitors/:id/check", requireAuth, async (req, res) => {
         console.error("Slack alert failed:", e.message);
       }
     }
-    if (diff.hasChanges && monitor.discordWebhook) {
+    if (alertWorthy && monitor.discordWebhook) {
       try {
         await sendDiscordAlert({ webhookUrl: monitor.discordWebhook, url: monitor.url, diff });
         discordSent = true;
@@ -852,7 +905,14 @@ app.post("/api/monitors/:id/check", requireAuth, async (req, res) => {
       }
     }
 
-    return res.json({ mode: "diff", hasChanges: diff.hasChanges, diff, outreach, screenshot, uptime, slackSent, discordSent, lastCheckedAt: last.fetchedAt, currentCheckedAt: snap.fetchedAt });
+    // Auto-pause: one-shot monitors stop checking themselves once they've fired —
+    // saves checks/credits instead of alerting forever after the target state hit
+    // (price drop, back in stock). Fixes a Visualping G2 complaint.
+    if (alertWorthy && monitor.autoPause) {
+      await updateMonitorAsync(req, monitor.id, { status: "paused" });
+    }
+
+    return res.json({ mode: "diff", hasChanges: diff.hasChanges, alertWorthy, diff, outreach, screenshot, uptime, slackSent, discordSent, autoPaused: alertWorthy && monitor.autoPause, lastCheckedAt: last.fetchedAt, currentCheckedAt: snap.fetchedAt });
   } catch (e) {
     return res.status(500).json({ error: e.message });
   }
@@ -878,7 +938,49 @@ app.get("/api/monitors/:id/history", requireAuth, async (req, res) => {
       });
     }
     diffs.reverse();
-    res.json({ monitor, diffs, checksRecorded: history.length, stats: calcMonitorStats(history), uptime: await computeUptimeStatsAsync(req, monitor.pageId) });
+    // Trend data — word count + impact score per check, oldest first, for the
+    // dashboard's historical trend sparkline (closes a Wachete G2 gap: no
+    // historical analytics at all).
+    const trend = history.map((h, i) => ({
+      at: h.fetchedAt,
+      wordCount: h.wordCount,
+      impactScore: i === 0 ? 0 : diffSnapshots(history[i - 1], h).impact.score,
+    }));
+    res.json({ monitor, diffs, trend, checksRecorded: history.length, stats: calcMonitorStats(history), uptime: await computeUptimeStatsAsync(req, monitor.pageId) });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// GET /api/monitors/:id/export.csv — download this monitor's full change history
+// as CSV. Closes a ChangeTower G2 complaint (reporting locked to in-app views
+// with limited export options) and a Visualping one (agencies need client reports).
+app.get("/api/monitors/:id/export.csv", requireAuth, async (req, res) => {
+  try {
+    const monitors = await loadMonitorsAsync(req);
+    const monitor = monitors.find((m) => m.id === req.params.id);
+    if (!monitor) return res.status(404).json({ error: "Monitor not found." });
+
+    const history = await loadMonitorHistoryAsync(req, monitor);
+    const rows = [["Checked At", "Title", "Word Count", "Impact Score", "Impact Level", "Title Changed", "Content Changed"]];
+    for (let i = 0; i < history.length; i++) {
+      const h = history[i];
+      const diff = i === 0 ? null : diffSnapshots(history[i - 1], h);
+      rows.push([
+        h.fetchedAt,
+        (h.title || "").replace(/"/g, '""'),
+        h.wordCount,
+        diff ? diff.impact.score : "",
+        diff ? diff.impact.level : "Baseline",
+        diff ? !!diff.titleChanged : "",
+        diff ? diff.contentChanged : "",
+      ]);
+    }
+    const csv = rows.map((r) => r.map((v) => `"${v}"`).join(",")).join("\n");
+    const safeName = monitor.url.replace(/[^a-z0-9]/gi, "-").slice(0, 60);
+    res.set("Content-Type", "text/csv");
+    res.set("Content-Disposition", `attachment; filename="signal-${safeName}.csv"`);
+    res.send(csv);
   } catch (e) {
     res.status(500).json({ error: e.message });
   }

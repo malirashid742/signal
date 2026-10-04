@@ -345,6 +345,14 @@ async function checkLinksInPool(urls, concurrency = 5) {
   return results;
 }
 
+// Noise filter (closes Visualping's #1 G2 complaint — alert fatigue from trivial
+// changes like cookie banners/ads). Each monitor has a minImpact floor
+// (Low/Medium/High); an alert only fires if the diff's impact level meets it.
+const IMPACT_RANK = { None: 0, Low: 1, Medium: 2, High: 3 };
+function impactMeetsThreshold(level, minLevel) {
+  return (IMPACT_RANK[level] ?? 0) >= (IMPACT_RANK[minLevel] ?? 1);
+}
+
 module.exports = {
   fetchPage,
   fetchPageWithMeta,
@@ -359,4 +367,5 @@ module.exports = {
   outreachOpportunities,
   checkLinkStatus,
   checkLinksInPool,
+  impactMeetsThreshold,
 };

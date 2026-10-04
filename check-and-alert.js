@@ -13,7 +13,7 @@
 const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
-const { fetchPage, extractData, diffSnapshots, outreachOpportunities } = require("./engine");
+const { fetchPage, extractData, diffSnapshots, outreachOpportunities, impactMeetsThreshold } = require("./engine");
 const { sendChangeAlert, sendSlackAlert, sendDiscordAlert } = require("./alerts");
 const { supabase } = require("./supabaseClient");
 
@@ -103,7 +103,7 @@ async function processLegacySubscriptions() {
 // each does exactly one job and was tested under `set local role anon` before
 // being wired in here. This covers every account's monitors in one pass.
 async function processDashboardMonitors() {
-  const { data: monitors, error } = await supabase.rpc("cron_list_monitors_v2");
+  const { data: monitors, error } = await supabase.rpc("cron_list_monitors_v3");
   if (error) {
     console.error(`[monitors] Failed to list monitors: ${error.message}`);
     return;
@@ -149,6 +149,10 @@ async function processDashboardMonitors() {
         console.log(`  No alert-worthy change for this monitor's condition.`);
         continue;
       }
+      if (!impactMeetsThreshold(diff.impact.level, monitor.min_impact || "Low")) {
+        console.log(`  Change found but below this monitor's noise filter (${diff.impact.level} < ${monitor.min_impact}).`);
+        continue;
+      }
 
       console.log(`  Alert-worthy change found (${diff.impact.level} impact).`);
 
@@ -175,6 +179,11 @@ async function processDashboardMonitors() {
         } catch (e) {
           console.error(`    Discord alert failed: ${e.message}`);
         }
+      }
+
+      if (monitor.auto_pause) {
+        await supabase.rpc("cron_pause_monitor", { p_monitor_id: monitor.id });
+        console.log(`  Auto-paused after firing (one-shot monitor).`);
       }
     } catch (e) {
       console.error(`  Error checking ${monitor.url}: ${e.message}`);
