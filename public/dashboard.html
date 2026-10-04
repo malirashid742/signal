@@ -196,6 +196,12 @@
     <button class="add-btn" id="openAddBtn">+ Add page to monitor</button>
     <div class="cap-note">Free plan: up to 3 pages, daily checks, email alerts.</div>
     <div class="monitor-item" onclick="showOverview()" style="font-weight:600;">📊 Overview</div>
+    <div id="bulkBar" style="display:none;align-items:center;gap:8px;margin-bottom:10px;font-size:12px;">
+      <span id="bulkCount" style="color:var(--muted);"></span>
+      <button class="btn-secondary" style="padding:4px 10px;font-size:11px;" onclick="bulkAction('pause')">Pause</button>
+      <button class="btn-secondary" style="padding:4px 10px;font-size:11px;" onclick="bulkAction('resume')">Resume</button>
+      <button class="btn-secondary" style="padding:4px 10px;font-size:11px;color:#B42318;" onclick="bulkAction('delete')">Delete</button>
+    </div>
     <div id="monitorList"></div>
   </div>
 
@@ -251,7 +257,21 @@
         <div style="display:flex;justify-content:space-between;align-items:center;"><span>🎯 Track one element</span><span style="font-size:11px;color:var(--muted);">Optional</span></div>
         <input type="text" id="selectorInput" placeholder="CSS selector, e.g. .price or #stock-status (optional)" style="margin-bottom:0;font-size:13px;padding:9px 12px;" />
       </div>
-      <div class="channel-row"><span>📄 PDF report export</span><span class="lock">Upgrade to unlock</span></div>
+      <div class="channel-row" style="flex-direction:column;align-items:stretch;gap:8px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;"><span>🔇 Only alert me for</span></div>
+        <select id="minImpactInput" style="margin-bottom:0;font-size:13px;padding:9px 12px;border-radius:8px;border:1px solid var(--border);">
+          <option value="Low" selected>Any real change (default)</option>
+          <option value="Medium">Medium+ impact (skip minor edits)</option>
+          <option value="High">High impact only (skip the noise)</option>
+        </select>
+      </div>
+      <div class="channel-row">
+        <span>⏸️ Stop after first alert</span>
+        <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted);">
+          <input type="checkbox" id="autoPauseInput" style="width:auto;margin:0;" /> One-shot
+        </label>
+      </div>
+      <div class="channel-row"><span>📄 CSV report export</span><span style="font-size:11px;color:var(--muted);">Available per monitor</span></div>
       <div class="channel-row"><span>🔔 Browser notifications</span><button class="btn-secondary" id="enableNotifsBtn" style="padding:6px 12px;font-size:12px;">Enable</button></div>
       <div class="modal-actions">
         <button class="btn-secondary" id="backToCondition">← Back</button>
@@ -323,6 +343,8 @@ document.getElementById('startMonitoring').addEventListener('click', async () =>
         slackWebhook: document.getElementById('slackWebhookInput').value.trim() || null,
         discordWebhook: document.getElementById('discordWebhookInput').value.trim() || null,
         selector: document.getElementById('selectorInput').value.trim() || null,
+        minImpact: document.getElementById('minImpactInput').value,
+        autoPause: document.getElementById('autoPauseInput').checked,
       }),
     });
     const data = await res.json();
@@ -353,23 +375,51 @@ async function loadMonitors() {
   } else {
     listEl.innerHTML = data.monitors.map(m => {
       const s = m.stats || {};
+      const statusLabel = m.status === 'checking' ? 'Checking...' : m.status === 'paused' ? 'Paused' : 'Active';
       return `
-      <div class="monitor-item ${m.id === activeMonitorId ? 'active' : ''}" onclick="selectMonitor('${m.id}')">
-        <div class="monitor-url">${escapeHtml(m.url)}</div>
-        <div class="monitor-meta">
-          <span><span class="status-dot status-${m.status}"></span>${m.status === 'checking' ? 'Checking...' : 'Active'}</span>
-          <span>${m.condition.replace('_',' ')}</span>
-        </div>
-        <div class="monitor-stats">
-          <span class="chip">Added ${s.addedAt ? timeAgo(s.addedAt) : '–'}</span>
-          <span class="chip ${s.changesLast7Days > 0 ? 'has-changes' : ''}">${s.changesLast7Days || 0} changes / 7d</span>
-          <span class="chip ${s.changesLast30Days > 0 ? 'has-changes' : ''}">${s.changesLast30Days || 0} / 30d</span>
+      <div class="monitor-item ${m.id === activeMonitorId ? 'active' : ''}" style="position:relative;">
+        <input type="checkbox" class="monitor-bulk-check" data-id="${m.id}" onclick="event.stopPropagation(); updateBulkBar();" style="position:absolute;top:10px;right:10px;width:auto;margin:0;" />
+        <div onclick="selectMonitor('${m.id}')" style="cursor:pointer;">
+          <div class="monitor-url">${escapeHtml(m.url)}</div>
+          <div class="monitor-meta">
+            <span><span class="status-dot status-${m.status}"></span>${statusLabel}</span>
+            <span>${m.condition.replace('_',' ')}</span>
+            ${m.minImpact && m.minImpact !== 'Low' ? `<span title="Only alerts on ${m.minImpact}+ impact">🔇 ${m.minImpact}+</span>` : ''}
+          </div>
+          <div class="monitor-stats">
+            <span class="chip">Added ${s.addedAt ? timeAgo(s.addedAt) : '–'}</span>
+            <span class="chip ${s.changesLast7Days > 0 ? 'has-changes' : ''}">${s.changesLast7Days || 0} changes / 7d</span>
+            <span class="chip ${s.changesLast30Days > 0 ? 'has-changes' : ''}">${s.changesLast30Days || 0} / 30d</span>
+          </div>
         </div>
       </div>
     `;
     }).join('');
   }
   loadSummaryBar();
+}
+
+function updateBulkBar() {
+  const checked = document.querySelectorAll('.monitor-bulk-check:checked');
+  const bar = document.getElementById('bulkBar');
+  if (checked.length) {
+    bar.style.display = 'flex';
+    document.getElementById('bulkCount').textContent = `${checked.length} selected`;
+  } else {
+    bar.style.display = 'none';
+  }
+}
+
+async function bulkAction(action) {
+  const ids = [...document.querySelectorAll('.monitor-bulk-check:checked')].map(el => el.dataset.id);
+  if (!ids.length) return;
+  if (action === 'delete' && !confirm(`Delete ${ids.length} monitor(s)? This can't be undone.`)) return;
+  await fetch('/api/monitors/bulk', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ids, action }),
+  });
+  loadMonitors();
 }
 
 async function loadSummaryBar() {
@@ -422,10 +472,14 @@ function renderHistoryPanel(data) {
         <h2>${escapeHtml(data.monitor.url)}</h2>
         <div class="sub">Added ${s.addedAt ? timeAgo(s.addedAt) : '–'} · ${data.checksRecorded} check${data.checksRecorded === 1 ? '' : 's'} · ${s.changesLast7Days || 0} changes in last 7 days · condition: ${data.monitor.condition.replace('_',' ')}</div>
       </div>
-      <button class="run-check-btn" id="runCheckNowBtn">Run check now</button>
+      <div style="display:flex;gap:8px;">
+        <a class="btn-secondary" style="text-decoration:none;display:inline-flex;align-items:center;padding:8px 14px;font-size:13px;" href="/api/monitors/${data.monitor.id}/export.csv">Export CSV</a>
+        <button class="run-check-btn" id="runCheckNowBtn">Run check now</button>
+      </div>
     </div>`;
 
   html += renderUptimeSection(data.uptime);
+  html += renderTrendSparkline(data.trend);
 
   html += `<div class="timeline">`;
 
@@ -464,6 +518,29 @@ function renderHistoryPanel(data) {
   html += `</div>`;
   panel.innerHTML = html;
   document.getElementById('runCheckNowBtn').addEventListener('click', () => runCheck(activeMonitorId));
+}
+
+// Historical trend sparkline — word count over time across all checks. Closes
+// a Wachete G2 gap (no historical data/analytics at all in that product).
+function renderTrendSparkline(trend) {
+  if (!trend || trend.length < 2) return '';
+  const w = 560, h = 60, pad = 4;
+  const counts = trend.map(t => t.wordCount || 0);
+  const min = Math.min(...counts), max = Math.max(...counts);
+  const range = (max - min) || 1;
+  const stepX = (w - pad * 2) / (trend.length - 1);
+  const points = counts.map((c, i) => {
+    const x = pad + i * stepX;
+    const y = h - pad - ((c - min) / range) * (h - pad * 2);
+    return `${x.toFixed(1)},${y.toFixed(1)}`;
+  }).join(' ');
+  return `
+    <div style="margin:16px 0;padding:14px 16px;background:#FAFAF8;border:1px solid var(--line);border-radius:10px;">
+      <div style="font-size:12px;color:var(--muted);margin-bottom:6px;">Word count trend — ${trend.length} checks</div>
+      <svg width="100%" height="${h}" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" style="display:block;">
+        <polyline points="${points}" fill="none" stroke="#2563EB" stroke-width="2" />
+      </svg>
+    </div>`;
 }
 
 function renderUptimeSection(uptime) {
