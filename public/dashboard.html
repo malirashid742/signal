@@ -243,6 +243,14 @@
         <div style="display:flex;justify-content:space-between;align-items:center;"><span>💬 Slack</span><span id="slackStatusLabel" style="font-size:11px;color:var(--muted);">Optional</span></div>
         <input type="text" id="slackWebhookInput" placeholder="Paste Slack incoming webhook URL (optional)" style="margin-bottom:0;font-size:13px;padding:9px 12px;" />
       </div>
+      <div class="channel-row" style="flex-direction:column;align-items:stretch;gap:8px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;"><span>🎮 Discord</span><span style="font-size:11px;color:var(--muted);">Optional</span></div>
+        <input type="text" id="discordWebhookInput" placeholder="Paste Discord webhook URL (optional)" style="margin-bottom:0;font-size:13px;padding:9px 12px;" />
+      </div>
+      <div class="channel-row" style="flex-direction:column;align-items:stretch;gap:8px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;"><span>🎯 Track one element</span><span style="font-size:11px;color:var(--muted);">Optional</span></div>
+        <input type="text" id="selectorInput" placeholder="CSS selector, e.g. .price or #stock-status (optional)" style="margin-bottom:0;font-size:13px;padding:9px 12px;" />
+      </div>
       <div class="channel-row"><span>📄 PDF report export</span><span class="lock">Upgrade to unlock</span></div>
       <div class="channel-row"><span>🔔 Browser notifications</span><button class="btn-secondary" id="enableNotifsBtn" style="padding:6px 12px;font-size:12px;">Enable</button></div>
       <div class="modal-actions">
@@ -307,7 +315,15 @@ document.getElementById('startMonitoring').addEventListener('click', async () =>
     const res = await fetch('/api/monitors', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ url: selectedUrl, condition: selectedCondition, frequency: 'daily', channels: ['email'], slackWebhook: document.getElementById('slackWebhookInput').value.trim() || null }),
+      body: JSON.stringify({
+        url: selectedUrl,
+        condition: selectedCondition,
+        frequency: 'daily',
+        channels: ['email'],
+        slackWebhook: document.getElementById('slackWebhookInput').value.trim() || null,
+        discordWebhook: document.getElementById('discordWebhookInput').value.trim() || null,
+        selector: document.getElementById('selectorInput').value.trim() || null,
+      }),
     });
     const data = await res.json();
     if (!res.ok) {

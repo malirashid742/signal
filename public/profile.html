@@ -159,7 +159,14 @@ document.getElementById('saveBtn').addEventListener('click', async () => {
   }
 });
 
-loadProfile();
+(async function initProfile() {
+  try {
+    const res = await fetch('/api/auth/session');
+    const data = await res.json();
+    if (!data.authenticated) { window.location.href = '/login.html'; return; }
+  } catch (e) {}
+  loadProfile();
+})();
 </script>
 
 </body>

@@ -185,8 +185,20 @@ function renderPlans() {
   }).join('');
 }
 
-function selectPlan(name) {
-  alert(`Billing isn't wired up yet in this build — "${name}" plan selection would go here once Stripe is connected.`);
+async function selectPlan(name) {
+  if (name === 'Free') { window.location.href = '/dashboard.html'; return; }
+  try {
+    const res = await fetch('/api/billing/checkout-url');
+    if (res.status === 401) { window.location.href = '/signup.html'; return; }
+    const data = await res.json();
+    if (!res.ok) {
+      alert(data.error || 'Could not start checkout. Try again.');
+      return;
+    }
+    window.location.href = data.url;
+  } catch (e) {
+    alert('Network error. Try again.');
+  }
 }
 
 const COMPARE_ROWS = [

@@ -25,6 +25,7 @@ const SIGNAL_HEADER_HTML = `
           <a href="/about.html"><strong>About</strong><span>Why we built Signal</span></a>
           <a href="/contact.html"><strong>Contact</strong><span>Get in touch</span></a>
           <a href="/privacy.html"><strong>Privacy</strong><span>Our data policy</span></a>
+          <a href="/terms.html"><strong>Terms</strong><span>Terms of service</span></a>
         </div>
       </div>
     </nav>
@@ -42,6 +43,7 @@ const SIGNAL_HEADER_HTML = `
     <a href="/about.html">About</a>
     <a href="/contact.html">Contact</a>
     <a href="/privacy.html">Privacy</a>
+    <a href="/terms.html">Terms</a>
     <a href="/demo">View demo</a>
     <a href="/signup.html" class="sg-mobile-cta">Sign up →</a>
   </div>
@@ -67,6 +69,7 @@ const SIGNAL_FOOTER_HTML = `
       <a href="/about.html">About</a>
       <a href="/contact.html">Contact</a>
       <a href="/privacy.html">Privacy Policy</a>
+      <a href="/terms.html">Terms of Service</a>
     </div>
     <div class="sg-footer-col">
       <h4>Account</h4>

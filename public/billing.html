@@ -111,7 +111,14 @@ async function loadBilling() {
     document.getElementById('pagesCap').textContent = monitors.cap;
   } catch (e) {}
 }
-loadBilling();
+(async function initBilling() {
+  try {
+    const res = await fetch('/api/auth/session');
+    const data = await res.json();
+    if (!data.authenticated) { window.location.href = '/login.html'; return; }
+  } catch (e) {}
+  loadBilling();
+})();
 </script>
 
 </body>
