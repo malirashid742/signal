@@ -137,6 +137,7 @@ app.use(async (req, res, next) => {
       }
       if (!error && data.user) {
         req.userId = data.user.id;
+        req.userEmail = data.user.email;
         req.db = createUserClient(token);
       }
     } catch (e) {
@@ -1424,6 +1425,65 @@ function summarize(snap) {
     fetchedAt: snap.fetchedAt,
   };
 }
+
+// ---------- SITE CONTENT (admin CMS) ----------
+// Lets the homepage's copy (hero headline, feature cards, etc.) be edited
+// from /admin.html without a code deploy. Backed by one jsonb row per
+// section in Supabase; public reads go through get_site_content() (no auth
+// needed — the homepage itself is anonymous), writes go through
+// admin_set_site_content() which checks the caller's email in Postgres
+// (defense in depth) on top of the isAdmin check here.
+const ADMIN_EMAIL = "malirashid742@gmail.com";
+
+const DEFAULT_HOMEPAGE_CONTENT = {
+  heroHeadline: "Know the moment a competitor changes anything.",
+  heroBody: "Content, links, images — plus an SEO Impact Score on every change, exact sentence-level diffs, new-page detection, and a shareable history link. Nobody else does all four.",
+  heroCta: "Check a page free →",
+  heroNote: "No signup for your first check. No card required.",
+  features: [
+    { tag: "Impact score", title: "Not every change matters", body: "Every diff gets a 0-100 SEO Impact Score, so you know which changes to act on and which to ignore." },
+    { tag: "Exact wording", title: "Real sentence-level diffs", body: "See the exact sentences added or removed — not just \"content changed.\" Word-level, like a code diff." },
+    { tag: "New pages", title: "Sitemap monitoring", body: "Catch new pages a competitor publishes anywhere on their site — not just the ones you're already tracking." },
+    { tag: "Shareable", title: "Public change history", body: "Every tracked page gets a shareable timeline link — send it to a client or teammate in one click." },
+  ],
+};
+
+function isAdminReq(req) {
+  return !req.isDemo && req.userEmail === ADMIN_EMAIL;
+}
+
+// GET /api/content/:key — public, no auth. Homepage/dashboard fetch this to
+// render dynamic copy. Falls back to defaults if nothing saved yet.
+app.get("/api/content/:key", async (req, res) => {
+  try {
+    const { data, error } = await supabase.rpc("get_site_content", { p_key: req.params.key });
+    if (error) throw error;
+    if (data) return res.json({ key: req.params.key, value: data });
+    if (req.params.key === "homepage") return res.json({ key: "homepage", value: DEFAULT_HOMEPAGE_CONTENT });
+    res.json({ key: req.params.key, value: null });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// PUT /api/admin/content/:key — admin-only. Saves the JSON blob the admin
+// panel sent, verbatim.
+app.put("/api/admin/content/:key", requireAuth, async (req, res) => {
+  if (!isAdminReq(req)) return res.status(403).json({ error: "Admin only." });
+  try {
+    const { error } = await req.db.rpc("admin_set_site_content", { p_key: req.params.key, p_value: req.body.value });
+    if (error) throw error;
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// GET /api/admin/check — lets the admin panel confirm access before showing
+// the edit form (vs. a logged-in-but-not-admin user just seeing a 403 wall).
+app.get("/api/admin/check", requireAuth, (req, res) => {
+  res.json({ isAdmin: isAdminReq(req) });
+});
 
 // Cheap, dependency-free health check for the host's port scan / health probe.
 // Must not touch disk or the browser so it always answers fast.
