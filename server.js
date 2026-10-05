@@ -539,6 +539,7 @@ async function updateMonitorAsync(req, id, fields) {
   if (fields.lastCheckedAt !== undefined) dbFields.last_checked_at = fields.lastCheckedAt;
   if (fields.minImpact !== undefined) dbFields.min_impact = fields.minImpact;
   if (fields.autoPause !== undefined) dbFields.auto_pause = fields.autoPause;
+  if (fields.frequency !== undefined) dbFields.frequency = fields.frequency;
   const { error } = await req.db.from("monitors").update(dbFields).eq("id", id);
   if (error) throw error;
 }
@@ -769,12 +770,18 @@ app.post("/api/monitors", requireAuth, async (req, res) => {
     if (existing.length >= cap) {
       return res.status(402).json({ error: `${profile.plan} plan allows ${cap} monitored pages. Upgrade to add more.`, capReached: true });
     }
+    // Frequency tiers: Free is daily-only. Enforced here too (not just the
+    // disabled UI option) since the API is callable directly.
+    const requestedFrequency = frequency || "daily";
+    if (requestedFrequency !== "daily" && profile.plan !== "Pro") {
+      return res.status(402).json({ error: "Hourly/12h checks are a Pro feature. Upgrade to unlock.", capReached: true });
+    }
     const monitor = {
       id: uuidv4(),
       url,
       pageId: keyFor(url),
       condition: condition || "any_change", // any_change | high_impact | new_pages | outreach
-      frequency: frequency || "daily",       // free tier only supports daily
+      frequency: ["hourly", "12h", "daily"].includes(requestedFrequency) ? requestedFrequency : "daily",
       channels: channels || ["email"],
       slackWebhook: slackWebhook || null,
       discordWebhook: discordWebhook || null,
@@ -795,11 +802,18 @@ app.post("/api/monitors", requireAuth, async (req, res) => {
 // auto-pause, channels) without recreating it.
 app.patch("/api/monitors/:id", requireAuth, async (req, res) => {
   try {
-    const { minImpact, autoPause, status, slackWebhook, discordWebhook, selector, condition } = req.body;
+    const { minImpact, autoPause, status, slackWebhook, discordWebhook, selector, condition, frequency } = req.body;
     const fields = {};
     if (minImpact !== undefined) fields.minImpact = minImpact;
     if (autoPause !== undefined) fields.autoPause = autoPause;
     if (status !== undefined) fields.status = status;
+    if (frequency !== undefined) {
+      if (frequency !== "daily") {
+        const profile = await loadProfileAsync(req);
+        if (profile.plan !== "Pro") return res.status(402).json({ error: "Hourly/12h checks are a Pro feature. Upgrade to unlock.", capReached: true });
+      }
+      fields.frequency = ["hourly", "12h", "daily"].includes(frequency) ? frequency : "daily";
+    }
     await updateMonitorAsync(req, req.params.id, fields);
     res.json({ ok: true });
   } catch (e) {

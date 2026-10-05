@@ -52,6 +52,18 @@ function matchesCondition(diff, outreach, condition) {
   }
 }
 
+// Monitoring frequency tiers (Pro-only: hourly/12h, Free: daily). The cron now
+// runs hourly (see .github/workflows/daily-check.yml); this decides, per
+// monitor, whether enough time has passed since its last check to run again —
+// so a daily monitor doesn't get re-checked 24x just because the cron does.
+const FREQUENCY_HOURS = { hourly: 1, "12h": 12, daily: 24 };
+function isMonitorDue(monitor) {
+  if (!monitor.last_checked_at) return true; // never checked — always due
+  const hoursNeeded = FREQUENCY_HOURS[monitor.frequency] || 24;
+  const hoursSince = (Date.now() - new Date(monitor.last_checked_at).getTime()) / 3600000;
+  return hoursSince >= hoursNeeded;
+}
+
 async function processLegacySubscriptions() {
   if (!fs.existsSync(SUBS_FILE)) return;
   const subs = JSON.parse(fs.readFileSync(SUBS_FILE, "utf8"));
@@ -103,7 +115,7 @@ async function processLegacySubscriptions() {
 // each does exactly one job and was tested under `set local role anon` before
 // being wired in here. This covers every account's monitors in one pass.
 async function processDashboardMonitors() {
-  const { data: monitors, error } = await supabase.rpc("cron_list_monitors_v3");
+  const { data: monitors, error } = await supabase.rpc("cron_list_monitors_v4");
   if (error) {
     console.error(`[monitors] Failed to list monitors: ${error.message}`);
     return;
@@ -111,7 +123,8 @@ async function processDashboardMonitors() {
   if (!monitors || !monitors.length) return;
 
   for (const monitor of monitors) {
-    console.log(`[monitors:${monitor.user_id}] Checking ${monitor.url} (condition: ${monitor.condition}) ...`);
+    if (!isMonitorDue(monitor)) continue;
+    console.log(`[monitors:${monitor.user_id}] Checking ${monitor.url} (condition: ${monitor.condition}, frequency: ${monitor.frequency}) ...`);
     try {
       const html = await fetchPage(monitor.url);
       const snap = extractData(html, monitor.url, monitor.selector);
