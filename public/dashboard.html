@@ -232,9 +232,10 @@
         <div class="option-card" data-condition="outreach">Outreach opportunities only</div>
       </div>
       <h3>Check frequency</h3>
-      <div class="option-grid">
+      <div class="option-grid" id="frequencyGrid">
         <div class="option-card selected" data-frequency="daily">Daily (free)</div>
-        <div class="option-card" style="opacity:0.5;cursor:not-allowed;" title="Upgrade to unlock">Every 12h 🔒</div>
+        <div class="option-card" data-frequency="12h" data-pro-only="1" style="opacity:0.5;cursor:not-allowed;" title="Upgrade to unlock">Every 12h 🔒</div>
+        <div class="option-card" data-frequency="hourly" data-pro-only="1" style="opacity:0.5;cursor:not-allowed;" title="Upgrade to unlock">Hourly 🔒</div>
       </div>
       <div class="modal-actions">
         <button class="btn-secondary" id="backToUrl">← Back</button>
@@ -295,8 +296,10 @@
 
 <script>
 let selectedCondition = 'any_change';
+let selectedFrequency = 'daily';
 let selectedUrl = '';
 let activeMonitorId = null;
+let isProPlan = false;
 
 const modalOverlay = document.getElementById('modalOverlay');
 document.getElementById('openAddBtn').addEventListener('click', () => {
@@ -327,6 +330,30 @@ document.querySelectorAll('[data-condition]').forEach(el => {
   });
 });
 
+document.querySelectorAll('#frequencyGrid [data-frequency]').forEach(el => {
+  el.addEventListener('click', () => {
+    if (el.dataset.proOnly === '1' && !isProPlan) {
+      alert('Hourly/12h checks are a Pro feature. Upgrade to unlock.');
+      return;
+    }
+    document.querySelectorAll('#frequencyGrid [data-frequency]').forEach(x => x.classList.remove('selected'));
+    el.classList.add('selected');
+    selectedFrequency = el.dataset.frequency;
+  });
+});
+
+// Unlocks the 12h/hourly frequency options once we know the user is on Pro
+// (checked via /api/profile, called from loadSidebar on page load).
+function unlockProFrequencyOptions() {
+  isProPlan = true;
+  document.querySelectorAll('#frequencyGrid [data-pro-only]').forEach(el => {
+    el.style.opacity = '1';
+    el.style.cursor = 'pointer';
+    el.title = '';
+    el.textContent = el.textContent.replace(' 🔒', '');
+  });
+}
+
 document.getElementById('startMonitoring').addEventListener('click', async () => {
   const btn = document.getElementById('startMonitoring');
   btn.disabled = true;
@@ -338,7 +365,7 @@ document.getElementById('startMonitoring').addEventListener('click', async () =>
       body: JSON.stringify({
         url: selectedUrl,
         condition: selectedCondition,
-        frequency: 'daily',
+        frequency: selectedFrequency,
         channels: ['email'],
         slackWebhook: document.getElementById('slackWebhookInput').value.trim() || null,
         discordWebhook: document.getElementById('discordWebhookInput').value.trim() || null,
@@ -705,6 +732,7 @@ async function loadSidebarProfile() {
     const name = [p.firstName, p.lastName].filter(Boolean).join(' ');
     document.getElementById('sidebarName').textContent = name || 'Set up your profile';
     document.getElementById('sidebarPlan').textContent = (p.plan || 'Free') + ' plan';
+    if (p.plan === 'Pro') unlockProFrequencyOptions();
   } catch (e) {}
 
   try {
