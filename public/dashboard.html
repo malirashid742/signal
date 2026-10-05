@@ -706,6 +706,13 @@ async function loadSidebarProfile() {
     document.getElementById('sidebarName').textContent = name || 'Set up your profile';
     document.getElementById('sidebarPlan').textContent = (p.plan || 'Free') + ' plan';
   } catch (e) {}
+
+  try {
+    const adminCheck = await fetch('/api/admin/check').then(r => r.json());
+    if (adminCheck.isAdmin) {
+      document.querySelector('.user-chip').insertAdjacentHTML('afterend', '<a href="/admin.html" style="display:block;font-size:12px;color:var(--muted);padding:6px 4px 2px;text-decoration:none;">⚙️ Edit homepage content</a>');
+    }
+  } catch (e) {}
 }
 
 function showOverview() {

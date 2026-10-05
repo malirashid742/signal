@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Admin — Signal</title>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{--ink:#0F172A;--paper:#F7F7F5;--amber:#E8A33D;--muted:#6B7280;--line:#E4E2DC;--text:#1A1D23;}
+  *{box-sizing:border-box;}
+  body{margin:0;font-family:'Inter',sans-serif;background:var(--paper);color:var(--text);}
+  .wrap{max-width:760px;margin:0 auto;padding:40px 24px 80px;}
+  h1{font-family:'Space Grotesk',sans-serif;font-size:26px;margin:0 0 4px;}
+  .sub{color:var(--muted);font-size:14px;margin-bottom:32px;}
+  h2{font-size:16px;font-weight:600;margin:32px 0 12px;border-bottom:1px solid var(--line);padding-bottom:8px;}
+  label{display:block;font-size:13px;font-weight:600;color:var(--muted);margin:14px 0 6px;}
+  input[type=text],textarea{width:100%;padding:10px 12px;font-size:14px;font-family:'Inter';border:1px solid var(--line);border-radius:8px;background:#fff;}
+  textarea{min-height:60px;resize:vertical;}
+  .feature-card{border:1px solid var(--line);border-radius:10px;padding:14px 16px;margin-bottom:12px;background:#fff;}
+  .btn{padding:12px 22px;font-size:14px;font-weight:600;border:none;border-radius:8px;cursor:pointer;}
+  .btn-primary{background:var(--ink);color:#fff;}
+  .btn-primary:hover{background:#1E293B;}
+  #status{margin-top:16px;font-size:13px;}
+  .ok{color:#1F7A4D;}
+  .err{color:#B23A34;}
+  .denied{padding:60px 20px;text-align:center;color:var(--muted);}
+  .hidden{display:none;}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div id="deniedBox" class="denied hidden">
+    <h2 style="border:none;">Not authorized</h2>
+    <p>This page is restricted. <a href="/dashboard.html">Back to dashboard</a></p>
+  </div>
+
+  <div id="formBox" class="hidden">
+    <h1>Homepage content</h1>
+    <div class="sub">Edits here go live on the homepage immediately — no deploy needed.</div>
+
+    <h2>Hero</h2>
+    <label>Headline</label>
+    <textarea id="heroHeadline"></textarea>
+    <label>Body text</label>
+    <textarea id="heroBody"></textarea>
+    <label>CTA button text</label>
+    <input type="text" id="heroCta" />
+    <label>Note under CTA</label>
+    <input type="text" id="heroNote" />
+
+    <h2>Feature cards (4)</h2>
+    <div id="featuresBox"></div>
+
+    <button class="btn btn-primary" id="saveBtn">Save changes</button>
+    <div id="status"></div>
+  </div>
+</div>
+
+<script>
+let current = null;
+
+async function init() {
+  const check = await fetch('/api/admin/check').then(r => r.ok ? r.json() : { isAdmin: false }).catch(() => ({ isAdmin: false }));
+  if (!check.isAdmin) {
+    document.getElementById('deniedBox').classList.remove('hidden');
+    return;
+  }
+  document.getElementById('formBox').classList.remove('hidden');
+
+  const res = await fetch('/api/content/homepage');
+  const data = await res.json();
+  current = data.value;
+  render();
+}
+
+function render() {
+  document.getElementById('heroHeadline').value = current.heroHeadline || '';
+  document.getElementById('heroBody').value = current.heroBody || '';
+  document.getElementById('heroCta').value = current.heroCta || '';
+  document.getElementById('heroNote').value = current.heroNote || '';
+
+  const box = document.getElementById('featuresBox');
+  box.innerHTML = (current.features || []).map((f, i) => `
+    <div class="feature-card">
+      <label>Tag (feature ${i + 1})</label>
+      <input type="text" data-f="${i}" data-k="tag" value="${escapeAttr(f.tag)}" />
+      <label>Title</label>
+      <input type="text" data-f="${i}" data-k="title" value="${escapeAttr(f.title)}" />
+      <label>Body</label>
+      <textarea data-f="${i}" data-k="body">${escapeHtml(f.body)}</textarea>
+    </div>
+  `).join('');
+}
+
+document.getElementById('saveBtn').addEventListener('click', async () => {
+  const payload = {
+    heroHeadline: document.getElementById('heroHeadline').value,
+    heroBody: document.getElementById('heroBody').value,
+    heroCta: document.getElementById('heroCta').value,
+    heroNote: document.getElementById('heroNote').value,
+    features: (current.features || []).map((f, i) => ({
+      tag: document.querySelector(`[data-f="${i}"][data-k="tag"]`).value,
+      title: document.querySelector(`[data-f="${i}"][data-k="title"]`).value,
+      body: document.querySelector(`[data-f="${i}"][data-k="body"]`).value,
+    })),
+  };
+  const statusEl = document.getElementById('status');
+  statusEl.textContent = 'Saving...';
+  statusEl.className = '';
+  try {
+    const res = await fetch('/api/admin/content/homepage', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ value: payload }),
+    });
+    const data = await res.json();
+    if (res.ok) {
+      statusEl.textContent = 'Saved — live on the homepage now.';
+      statusEl.className = 'ok';
+      current = payload;
+    } else {
+      statusEl.textContent = data.error || 'Save failed.';
+      statusEl.className = 'err';
+    }
+  } catch (e) {
+    statusEl.textContent = 'Network error.';
+    statusEl.className = 'err';
+  }
+});
+
+function escapeHtml(s) { return String(s || '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+function escapeAttr(s) { return escapeHtml(s); }
+
+init();
+</script>
+</body>
+</html>

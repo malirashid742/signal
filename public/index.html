@@ -101,12 +101,12 @@
 <div class="hero">
   <div class="wrap hero-grid">
     <div>
-      <h1>Know the moment a competitor changes anything.</h1>
-      <p>Content, links, images — plus an SEO Impact Score on every change, exact sentence-level diffs, new-page detection, and a shareable history link. Nobody else does all four.</p>
-      <button class="hero-cta" onclick="document.getElementById('tool').scrollIntoView({behavior:'smooth'})">
+      <h1 id="cmsHeroHeadline">Know the moment a competitor changes anything.</h1>
+      <p id="cmsHeroBody">Content, links, images — plus an SEO Impact Score on every change, exact sentence-level diffs, new-page detection, and a shareable history link. Nobody else does all four.</p>
+      <button class="hero-cta" id="cmsHeroCta" onclick="document.getElementById('tool').scrollIntoView({behavior:'smooth'})">
         Check a page free →
       </button>
-      <div class="hero-note">No signup for your first check. No card required.</div>
+      <div class="hero-note" id="cmsHeroNote">No signup for your first check. No card required.</div>
     </div>
     <div class="diffcard">
       <div class="filerow"><span>competitor.com/pricing</span><span>2 changes found</span></div>
@@ -126,7 +126,7 @@
       <h2>Built for the four things that actually move rankings</h2>
       <p>Most monitoring tools show you a wall of pixels. Signal isolates the changes that matter for SEO and content strategy.</p>
     </div>
-    <div class="grid3">
+    <div class="grid3" id="cmsFeatureGrid">
       <div class="feat"><div class="n">Impact score</div><h3>Not every change matters</h3><p>Every diff gets a 0-100 SEO Impact Score, so you know which changes to act on and which to ignore.</p></div>
       <div class="feat"><div class="n">Exact wording</div><h3>Real sentence-level diffs</h3><p>See the exact sentences added or removed — not just "content changed." Word-level, like a code diff.</p></div>
       <div class="feat"><div class="n">New pages</div><h3>Sitemap monitoring</h3><p>Catch new pages a competitor publishes anywhere on their site — not just the ones you're already tracking.</p></div>
@@ -164,6 +164,28 @@
 <div id="sg-footer-mount"></div>
 
 <script src="/shared-nav.js"></script>
+
+<script>
+// CMS overlay — swaps in admin-edited copy if any was saved. The hardcoded
+// markup above is the fallback, so the page is never blank while this loads.
+(async function loadCmsContent() {
+  try {
+    const res = await fetch('/api/content/homepage');
+    if (!res.ok) return;
+    const { value } = await res.json();
+    if (!value) return;
+    if (value.heroHeadline) document.getElementById('cmsHeroHeadline').textContent = value.heroHeadline;
+    if (value.heroBody) document.getElementById('cmsHeroBody').textContent = value.heroBody;
+    if (value.heroCta) document.getElementById('cmsHeroCta').textContent = value.heroCta;
+    if (value.heroNote) document.getElementById('cmsHeroNote').textContent = value.heroNote;
+    if (Array.isArray(value.features) && value.features.length) {
+      document.getElementById('cmsFeatureGrid').innerHTML = value.features.map(f => `
+        <div class="feat"><div class="n">${escapeHtml(f.tag || '')}</div><h3>${escapeHtml(f.title || '')}</h3><p>${escapeHtml(f.body || '')}</p></div>
+      `).join('');
+    }
+  } catch (e) { /* keep hardcoded fallback */ }
+})();
+</script>
 
 <script>
 
