@@ -16,6 +16,25 @@
   body{margin:0;font-family:'Inter',sans-serif;color:var(--text);background:var(--paper);}
   h1,h2,h3{font-family:'Space Grotesk',sans-serif;}
 
+  /* Keyboard focus — visible everywhere, never relies on hover */
+  a:focus-visible,button:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-visible,[tabindex]:focus-visible{
+    outline:2px solid var(--amber);outline-offset:2px;border-radius:4px;
+  }
+  @media(prefers-reduced-motion:reduce){*{animation-duration:0.01ms!important;transition-duration:0.01ms!important;}}
+
+  .btn-primary,.btn-secondary,.add-btn,.run-check-btn{transition:transform 0.1s ease,background 0.15s ease,border-color 0.15s ease,box-shadow 0.15s ease;}
+  .btn-primary:hover{background:#1E293B;}
+  .btn-primary:active{transform:scale(0.98);}
+  .btn-secondary:hover{border-color:var(--ink);}
+  .btn-secondary:active{transform:scale(0.98);}
+
+  /* Shimmer skeleton — used while history/overview data is loading, instead
+     of a bare spinner, so the layout doesn't jump once content arrives. */
+  .skeleton{background:linear-gradient(90deg,#EAE8E1 25%,#F6F5F1 37%,#EAE8E1 63%);background-size:400% 100%;animation:shimmer 1.4s ease infinite;border-radius:8px;}
+  @keyframes shimmer{0%{background-position:100% 0;}100%{background-position:-100% 0;}}
+  .skel-line{height:14px;margin-bottom:10px;}
+  .skel-card{height:72px;border-radius:10px;margin-bottom:12px;}
+
   header{background:var(--ink);color:#fff;padding:16px 28px;display:flex;justify-content:space-between;align-items:center;}
   .logo{font-family:'Space Grotesk';font-weight:700;font-size:18px;display:flex;align-items:center;gap:8px;}
   .logo-mark{width:9px;height:9px;background:var(--amber);border-radius:2px;transform:rotate(45deg);}
@@ -54,7 +73,10 @@
   .status-dot{width:7px;height:7px;border-radius:50%;display:inline-block;margin-right:5px;}
   .status-checking{background:var(--amber);}
   .status-active{background:var(--added);}
-  .empty-left{font-size:13px;color:var(--muted);text-align:center;padding:40px 10px;}
+  .empty-left{font-size:13px;color:var(--muted);text-align:center;padding:36px 16px;border:1px dashed var(--line);border-radius:12px;}
+  .empty-left .empty-mark{width:22px;height:22px;background:var(--amber);border-radius:5px;transform:rotate(45deg);margin:0 auto 18px;opacity:0.85;}
+  .empty-left strong{display:block;color:var(--text);font-size:14px;font-weight:600;margin-bottom:6px;}
+  .empty-left button{margin-top:14px;}
 
   .panel-right{padding:28px;overflow-y:auto;}
   .empty-right{color:var(--muted);font-size:14px;text-align:center;padding:80px 20px;}
@@ -398,7 +420,13 @@ async function loadMonitors() {
   document.getElementById('capLabel').textContent = `${data.monitors.length}/${data.cap}`;
   const listEl = document.getElementById('monitorList');
   if (!data.monitors.length) {
-    listEl.innerHTML = '<div class="empty-left">No pages monitored yet.</div>';
+    listEl.innerHTML = `
+      <div class="empty-left">
+        <div class="empty-mark"></div>
+        <strong>Nothing tracked yet</strong>
+        Add a competitor's page and we'll alert you the moment it changes.
+        <div><button class="btn-primary" onclick="document.getElementById('openAddBtn').click()">+ Add your first page</button></div>
+      </div>`;
   } else {
     listEl.innerHTML = data.monitors.map(m => {
       const s = m.stats || {};
@@ -479,7 +507,12 @@ async function selectMonitor(id) {
 
 async function loadHistory(id) {
   const panel = document.getElementById('panelRight');
-  panel.innerHTML = '<div class="checking-state"><div class="spinner"></div>Loading history...</div>';
+  panel.innerHTML = `
+    <div class="skeleton skel-line" style="width:45%;height:22px;"></div>
+    <div class="skeleton skel-line" style="width:65%;margin-bottom:20px;"></div>
+    <div class="skeleton skel-card"></div>
+    <div class="skeleton skel-card"></div>
+    <div class="skeleton skel-card" style="width:80%;"></div>`;
   const res = await fetch(`/api/monitors/${id}/history`);
   const data = await res.json();
   if (!res.ok) {

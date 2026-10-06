@@ -14,12 +14,15 @@
   .sub{color:var(--muted);font-size:14px;margin-bottom:32px;}
   h2{font-size:16px;font-weight:600;margin:32px 0 12px;border-bottom:1px solid var(--line);padding-bottom:8px;}
   label{display:block;font-size:13px;font-weight:600;color:var(--muted);margin:14px 0 6px;}
-  input[type=text],textarea{width:100%;padding:10px 12px;font-size:14px;font-family:'Inter';border:1px solid var(--line);border-radius:8px;background:#fff;}
+  input[type=text],textarea{width:100%;padding:10px 12px;font-size:14px;font-family:'Inter';border:1px solid var(--line);border-radius:8px;background:#fff;transition:border-color 0.15s ease;}
+  input[type=text]:focus-visible,textarea:focus-visible{outline:2px solid var(--amber);outline-offset:1px;border-color:var(--amber);}
   textarea{min-height:60px;resize:vertical;}
   .feature-card{border:1px solid var(--line);border-radius:10px;padding:14px 16px;margin-bottom:12px;background:#fff;}
-  .btn{padding:12px 22px;font-size:14px;font-weight:600;border:none;border-radius:8px;cursor:pointer;}
+  .btn{padding:12px 22px;font-size:14px;font-weight:600;border:none;border-radius:8px;cursor:pointer;transition:transform 0.1s ease,background 0.15s ease;}
   .btn-primary{background:var(--ink);color:#fff;}
   .btn-primary:hover{background:#1E293B;}
+  .btn-primary:active{transform:scale(0.98);}
+  .btn:focus-visible{outline:2px solid var(--amber);outline-offset:2px;}
   #status{margin-top:16px;font-size:13px;}
   .ok{color:#1F7A4D;}
   .err{color:#B23A34;}

@@ -46,8 +46,23 @@
   @media(max-width:860px){.hero-grid{grid-template-columns:1fr;}}
   .hero h1{font-size:42px;line-height:1.12;font-weight:600;margin:0 0 18px;max-width:480px;}
   .hero p{font-size:17px;line-height:1.6;color:#B6BDCB;max-width:440px;margin:0 0 28px;}
-  .hero-cta{display:inline-flex;align-items:center;gap:10px;background:var(--amber);color:var(--ink);font-weight:600;font-size:15px;padding:13px 22px;border-radius:8px;border:none;cursor:pointer;}
+  .hero-cta{display:inline-flex;align-items:center;gap:10px;background:var(--amber);color:var(--ink);font-weight:600;font-size:15px;padding:13px 22px;border-radius:8px;border:none;cursor:pointer;transition:transform 0.12s ease,background 0.15s ease;}
   .hero-cta:hover{background:#f0ae4d;}
+  .hero-cta:active{transform:scale(0.97);}
+  a:focus-visible,button:focus-visible,input:focus-visible{outline:2px solid var(--amber);outline-offset:2px;border-radius:4px;}
+  @media(prefers-reduced-motion:reduce){*{animation-duration:0.01ms!important;}}
+
+  /* One orchestrated reveal on load — the diff lines appear in the order a
+     real diff would surface them, instead of the whole card popping in at once. */
+  .diffline{opacity:0;animation:revealLine 0.4s ease forwards;}
+  .diffline:nth-child(2){animation-delay:0.5s;}
+  .diffline:nth-child(3){animation-delay:0.9s;}
+  .diffline:nth-child(4){animation-delay:1.5s;}
+  .diffline:nth-child(5){animation-delay:1.7s;}
+  .diffline:nth-child(6){animation-delay:2.1s;}
+  .diffline:nth-child(7){animation-delay:2.3s;}
+  @keyframes revealLine{from{opacity:0;transform:translateX(-4px);}to{opacity:1;transform:translateX(0);}}
+  @media(prefers-reduced-motion:reduce){.diffline{opacity:1;animation:none;}}
   .hero-note{font-size:13px;color:#7C8496;margin-top:12px;}
 
   .diffcard{background:#111827;border:1px solid #2A3345;border-radius:12px;padding:20px 22px;font-size:13px;}
@@ -73,8 +88,9 @@
   .tool-row{display:flex;gap:10px;}
   input[type=text]{flex:1;padding:13px 16px;font-size:15px;font-family:'Inter';border:1px solid #D8D5CC;border-radius:8px;background:var(--paper);}
   input[type=text]:focus{outline:2px solid var(--ink);outline-offset:1px;}
-  .btn-primary{padding:13px 22px;font-size:15px;font-weight:600;font-family:'Inter';background:var(--ink);color:#fff;border:none;border-radius:8px;cursor:pointer;}
+  .btn-primary{padding:13px 22px;font-size:15px;font-weight:600;font-family:'Inter';background:var(--ink);color:#fff;border:none;border-radius:8px;cursor:pointer;transition:transform 0.1s ease,background 0.15s ease;}
   .btn-primary:hover{background:#1E293B;}
+  .btn-primary:active{transform:scale(0.98);}
   .btn-primary:disabled{background:#A3A9B4;cursor:not-allowed;}
   .tool-hint{font-size:13px;color:var(--muted);margin-top:10px;}
 
@@ -108,15 +124,22 @@
       </button>
       <div class="hero-note" id="cmsHeroNote">No signup for your first check. No card required.</div>
     </div>
-    <div class="diffcard">
+    <div class="diffcard" id="heroDiffcard">
       <div class="filerow"><span>competitor.com/pricing</span><span>2 changes found</span></div>
-      <div class="diffline meta">&lt;title&gt;</div>
-      <div class="diffline old">Acme SEO Services</div>
-      <div class="diffline new">Acme SEO &amp; PPC Services</div>
-      <div class="diffline meta" style="margin-top:10px;">internal links</div>
-      <div class="diffline old">/about</div>
-      <div class="diffline new">/case-studies</div>
+      <div class="diffline meta reveal" style="--d:0">&lt;title&gt;</div>
+      <div class="diffline old reveal" style="--d:1">Acme SEO Services</div>
+      <div class="diffline new reveal" style="--d:2">Acme SEO &amp; PPC Services</div>
+      <div class="diffline meta reveal" style="--d:3;margin-top:10px;">internal links</div>
+      <div class="diffline old reveal" style="--d:4">/about</div>
+      <div class="diffline new reveal" style="--d:5">/case-studies</div>
     </div>
+  </div>
+  <div class="wrap trust-strip">
+    <span>SEO Impact Score on every change</span>
+    <span class="sep">·</span>
+    <span>Word-level diffs, not "content changed"</span>
+    <span class="sep">·</span>
+    <span>Screenshots + uptime + sitemap, one dashboard</span>
   </div>
 </div>
 
