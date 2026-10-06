@@ -1,0 +1,26 @@
+name: Monitor check
+
+on:
+  schedule:
+    # Hourly — required for Pro's hourly/12h frequency tiers. check-and-alert.js
+    # itself decides per-monitor whether it's actually due (daily monitors don't
+    # get re-checked on every hourly run). Also keeps Supabase's free-tier
+    # project from auto-pausing after 7 days of inactivity.
+    - cron: "0 * * * *"
+  workflow_dispatch: {}
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: npm ci --omit=dev
+      - run: node check-and-alert.js
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          GMAIL_USER: ${{ secrets.GMAIL_USER }}
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
