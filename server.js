@@ -759,6 +759,30 @@ function capFor(plan) {
   return plan === "Pro" ? PRO_MONITOR_CAP : FREE_MONITOR_CAP;
 }
 
+// Manual "check now" rate limiting — without this, a Free user could hammer the
+// button to bypass the daily/hourly frequency tiers entirely. Counted per
+// account, reset at UTC midnight (profiles.manual_checks_reset_at).
+const FREE_MANUAL_CHECK_CAP = 20;
+const PRO_MANUAL_CHECK_CAP = 200;
+async function checkAndIncrementManualCheckQuota(req, plan) {
+  if (req.isDemo) return { ok: true }; // demo mode isn't real network traffic
+  const cap = plan === "Pro" ? PRO_MANUAL_CHECK_CAP : FREE_MANUAL_CHECK_CAP;
+  const today = new Date().toISOString().slice(0, 10);
+  const { data: row, error: e1 } = await req.db.from("profiles").select("manual_checks_today, manual_checks_reset_at").eq("id", req.userId).single();
+  if (e1) throw e1;
+  const isNewDay = row.manual_checks_reset_at !== today;
+  const current = isNewDay ? 0 : row.manual_checks_today;
+  if (current >= cap) {
+    return { ok: false, cap };
+  }
+  const { error: e2 } = await req.db.from("profiles").update({
+    manual_checks_today: current + 1,
+    manual_checks_reset_at: today,
+  }).eq("id", req.userId);
+  if (e2) throw e2;
+  return { ok: true };
+}
+
 // Computes "how many changes in the last N days" for a monitor, plus total checks —
 // this is what makes the dashboard feel mature instead of just a raw event list.
 // Pure calculation — takes an already-loaded history array, storage-agnostic.
@@ -928,6 +952,12 @@ app.post("/api/monitors/:id/check", requireAuth, async (req, res) => {
     const monitors = await loadMonitorsAsync(req);
     const monitor = monitors.find((m) => m.id === req.params.id);
     if (!monitor) return res.status(404).json({ error: "Monitor not found." });
+
+    const profile = await loadProfileAsync(req);
+    const quota = await checkAndIncrementManualCheckQuota(req, profile.plan);
+    if (!quota.ok) {
+      return res.status(429).json({ error: `Daily manual check limit reached (${quota.cap}/day on ${profile.plan} plan). Try again tomorrow${profile.plan !== "Pro" ? ", or upgrade to Pro for 200/day." : "."}`, rateLimited: true });
+    }
 
     // Uptime ping is recorded regardless of outcome — a 404/500/timeout IS the data
     // point for uptime tracking, unlike content checks where it's an error to throw.
