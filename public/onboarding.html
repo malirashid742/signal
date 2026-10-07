@@ -37,40 +37,66 @@
   .btn-primary{width:100%;margin-top:20px;padding:13px;background:var(--ink);color:#fff;border:none;border-radius:8px;font-size:15px;font-weight:600;cursor:pointer;transition:background 0.15s,opacity 0.15s;}
   .btn-primary:hover{background:#1E293B;}
   .btn-primary:disabled{background:#D8D5CC;color:#A3A9B4;cursor:not-allowed;}
+
+  .step-dots{display:flex;gap:6px;margin-bottom:24px;}
+  .step-dot{width:24px;height:4px;border-radius:2px;background:var(--line);transition:background 0.2s;}
+  .step-dot.active{background:var(--amber);}
+  .hidden{display:none;}
+  input[type=url]{width:100%;padding:13px 14px;font-size:15px;font-family:'Inter';border:1.5px solid var(--line);border-radius:8px;background:#fff;margin-bottom:14px;transition:border-color 0.15s;}
+  input[type=url]:focus{outline:none;border-color:var(--ink);}
+  .skip-link{display:block;text-align:center;margin-top:14px;font-size:13px;color:var(--muted);text-decoration:none;cursor:pointer;}
+  .skip-link:hover{color:var(--text);}
+  .err-msg{font-size:13px;color:#B23A34;margin:-6px 0 12px;display:none;}
 </style>
 </head>
 <body>
 
 <div class="wrap">
   <div class="logo"><span class="logo-mark"></span>Signal</div>
-  <h1>Who will you be monitoring for?</h1>
-  <p class="sub">This helps us tailor which features we show first.</p>
 
-  <div class="option" data-value="myself" onclick="select(this)">
-    <span class="option-icon">👤</span>
-    <div>
-      <div class="option-text">Myself</div>
-      <div class="option-sub">Tracking competitors for my own project or business</div>
+  <div id="step1">
+    <div class="step-dots"><div class="step-dot active"></div><div class="step-dot"></div></div>
+    <h1>Who will you be monitoring for?</h1>
+    <p class="sub">This helps us tailor which features we show first.</p>
+
+    <div class="option" data-value="myself" onclick="select(this)">
+      <span class="option-icon">👤</span>
+      <div>
+        <div class="option-text">Myself</div>
+        <div class="option-sub">Tracking competitors for my own project or business</div>
+      </div>
     </div>
+
+    <div class="option" data-value="clients" onclick="select(this)">
+      <span class="option-icon">👥</span>
+      <div>
+        <div class="option-text">My clients</div>
+        <div class="option-sub">I run an agency and track competitors for multiple clients</div>
+      </div>
+    </div>
+
+    <div class="option" data-value="company" onclick="select(this)">
+      <span class="option-icon">🏢</span>
+      <div>
+        <div class="option-text">My company</div>
+        <div class="option-sub">Tracking on behalf of a team or in-house marketing group</div>
+      </div>
+    </div>
+
+    <button class="btn-primary" id="continueBtn" disabled onclick="goToStep2()">Continue</button>
   </div>
 
-  <div class="option" data-value="clients" onclick="select(this)">
-    <span class="option-icon">👥</span>
-    <div>
-      <div class="option-text">My clients</div>
-      <div class="option-sub">I run an agency and track competitors for multiple clients</div>
-    </div>
-  </div>
+  <div id="step2" class="hidden">
+    <div class="step-dots"><div class="step-dot active"></div><div class="step-dot active"></div></div>
+    <h1>Add your first page</h1>
+    <p class="sub">A competitor's pricing page, blog, or homepage — we'll check it and alert you the moment it changes.</p>
 
-  <div class="option" data-value="company" onclick="select(this)">
-    <span class="option-icon">🏢</span>
-    <div>
-      <div class="option-text">My company</div>
-      <div class="option-sub">Tracking on behalf of a team or in-house marketing group</div>
-    </div>
-  </div>
+    <input type="url" id="firstUrl" placeholder="https://competitor.com/pricing" />
+    <div class="err-msg" id="urlErr">Enter a valid URL (starting with http:// or https://).</div>
 
-  <button class="btn-primary" id="continueBtn" disabled onclick="continueOnboarding()">Continue</button>
+    <button class="btn-primary" id="addBtn" onclick="addFirstMonitor()">Start monitoring</button>
+    <a class="skip-link" onclick="window.location.href='/dashboard.html'">Skip for now</a>
+  </div>
 </div>
 
 <script>
@@ -83,7 +109,7 @@ function select(el) {
   document.getElementById('continueBtn').disabled = false;
 }
 
-async function continueOnboarding() {
+async function goToStep2() {
   const btn = document.getElementById('continueBtn');
   btn.disabled = true;
   btn.textContent = 'Saving...';
@@ -92,6 +118,30 @@ async function continueOnboarding() {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ useCase: selected }),
+    });
+  } catch (e) {}
+  document.getElementById('step1').classList.add('hidden');
+  document.getElementById('step2').classList.remove('hidden');
+  document.getElementById('firstUrl').focus();
+}
+
+async function addFirstMonitor() {
+  const urlInput = document.getElementById('firstUrl');
+  const url = urlInput.value.trim();
+  const err = document.getElementById('urlErr');
+  if (!/^https?:\/\/.+/.test(url)) {
+    err.style.display = 'block';
+    return;
+  }
+  err.style.display = 'none';
+  const btn = document.getElementById('addBtn');
+  btn.disabled = true;
+  btn.textContent = 'Adding...';
+  try {
+    await fetch('/api/monitors', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url, condition: 'any_change', frequency: 'daily', channels: ['email'] }),
     });
   } catch (e) {}
   window.location.href = '/dashboard.html';
