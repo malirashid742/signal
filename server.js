@@ -470,6 +470,7 @@ function mapMonitorRow(row) {
   return {
     id: row.id,
     url: row.url,
+    ownerId: row.user_id || null,
     pageId: row.page_id,
     condition: row.condition,
     frequency: row.frequency || "daily",
@@ -685,6 +686,72 @@ app.post("/api/profile", requireAuth, async (req, res) => {
   }
 });
 
+const TEAM_SEAT_CAP = 3; // Pro plan — teammates sharing one workspace
+
+// GET /api/team — my invited teammates + any teams I belong to as a member
+app.get("/api/team", requireAuth, async (req, res) => {
+  if (req.isDemo) return res.json({ members: [], memberOf: [] });
+  try {
+    const { data: members, error: e1 } = await req.db
+      .from("team_members").select("*").eq("owner_id", req.userId).order("invited_at", { ascending: true });
+    if (e1) throw e1;
+    const { data: memberOf, error: e2 } = await req.db
+      .from("team_members").select("*").eq("member_id", req.userId).eq("status", "active");
+    if (e2) throw e2;
+    res.json({
+      members: members.map((m) => ({ id: m.id, email: m.member_email, status: m.status, invitedAt: m.invited_at })),
+      memberOf: memberOf.map((m) => ({ ownerId: m.owner_id })),
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// POST /api/team/invite — body: { email }. Pro plan only, capped seats.
+app.post("/api/team/invite", requireAuth, async (req, res) => {
+  if (req.isDemo) return res.status(400).json({ error: "Sign up for a real account to use team seats." });
+  const email = (req.body.email || "").trim().toLowerCase();
+  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    return res.status(400).json({ error: "Provide a valid email." });
+  }
+  try {
+    const profile = await loadProfileAsync(req);
+    if (profile.plan !== "Pro") {
+      return res.status(402).json({ error: "Team seats are a Pro feature. Upgrade to invite teammates.", capReached: true });
+    }
+    if (email === (profile.email || "").toLowerCase() || email === (req.userEmail || "").toLowerCase()) {
+      return res.status(400).json({ error: "That's your own email." });
+    }
+    const { data: existing, error: e1 } = await req.db.from("team_members").select("id").eq("owner_id", req.userId);
+    if (e1) throw e1;
+    if (existing.length >= TEAM_SEAT_CAP) {
+      return res.status(402).json({ error: `Pro plan allows ${TEAM_SEAT_CAP} team seats.`, capReached: true });
+    }
+    const { data, error } = await req.db.from("team_members").insert({
+      owner_id: req.userId, member_email: email, status: "pending",
+    }).select().single();
+    if (error) {
+      if (error.code === "23505") return res.status(400).json({ error: "Already invited." });
+      throw error;
+    }
+    res.json({ ok: true, member: { id: data.id, email: data.member_email, status: data.status, invitedAt: data.invited_at } });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// DELETE /api/team/:id — remove a teammate (owner only, enforced by RLS)
+app.delete("/api/team/:id", requireAuth, async (req, res) => {
+  if (req.isDemo) return res.status(400).json({ error: "Not available in demo mode." });
+  try {
+    const { error } = await req.db.from("team_members").delete().eq("id", req.params.id).eq("owner_id", req.userId);
+    if (error) throw error;
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 const FREE_MONITOR_CAP = 3;
 const PRO_MONITOR_CAP = 50; // Pro plan — paid via Lemon Squeezy
 
@@ -740,7 +807,11 @@ app.get("/screenshots/:pageId/:filename", (req, res) => {
 app.get("/api/monitors", requireAuth, async (req, res) => {
   try {
     const monitors = await loadMonitorsAsync(req);
-    const withStats = await Promise.all(monitors.map(async (m) => ({ ...m, stats: await computeMonitorStatsAsync(req, m) })));
+    const withStats = await Promise.all(monitors.map(async (m) => ({
+      ...m,
+      isShared: !!(m.ownerId && m.ownerId !== req.userId),
+      stats: await computeMonitorStatsAsync(req, m),
+    })));
     const profile = await loadProfileAsync(req);
     res.json({ monitors: withStats, cap: capFor(profile.plan) });
   } catch (e) {
@@ -765,9 +836,10 @@ app.post("/api/monitors", requireAuth, async (req, res) => {
   }
   try {
     const existing = await loadMonitorsAsync(req);
+    const ownMonitorCount = existing.filter((m) => !m.ownerId || m.ownerId === req.userId).length;
     const profile = await loadProfileAsync(req);
     const cap = capFor(profile.plan);
-    if (existing.length >= cap) {
+    if (ownMonitorCount >= cap) {
       return res.status(402).json({ error: `${profile.plan} plan allows ${cap} monitored pages. Upgrade to add more.`, capReached: true });
     }
     // Frequency tiers: Free is daily-only. Enforced here too (not just the
