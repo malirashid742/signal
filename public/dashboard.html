@@ -695,7 +695,9 @@ async function runCheck(id) {
   try {
     const res = await fetch(`/api/monitors/${id}/check`, { method: 'POST' });
     const data = await res.json();
-    if (data.hasChanges) {
+    if (res.status === 429) {
+      alert(data.error || 'Daily check limit reached.');
+    } else if (data.hasChanges) {
       notifyBrowser(data.diff, data.currentCheckedAt);
     }
   } catch (e) {}
