@@ -417,7 +417,8 @@ document.getElementById('startMonitoring').addEventListener('click', async () =>
 async function loadMonitors() {
   const res = await fetch('/api/monitors');
   const data = await res.json();
-  document.getElementById('capLabel').textContent = `${data.monitors.length}/${data.cap}`;
+  const ownCount = data.monitors.filter(m => !m.isShared).length;
+  document.getElementById('capLabel').textContent = `${ownCount}/${data.cap}`;
   const listEl = document.getElementById('monitorList');
   if (!data.monitors.length) {
     listEl.innerHTML = `
@@ -440,6 +441,7 @@ async function loadMonitors() {
             <span><span class="status-dot status-${m.status}"></span>${statusLabel}</span>
             <span>${m.condition.replace('_',' ')}</span>
             ${m.minImpact && m.minImpact !== 'Low' ? `<span title="Only alerts on ${m.minImpact}+ impact">🔇 ${m.minImpact}+</span>` : ''}
+            ${m.isShared ? `<span title="Shared with you by a teammate">👥 Team</span>` : ''}
           </div>
           <div class="monitor-stats">
             <span class="chip">Added ${s.addedAt ? timeAgo(s.addedAt) : '–'}</span>

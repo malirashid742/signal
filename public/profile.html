@@ -48,6 +48,22 @@
 
   .section-title{font-size:14px;font-weight:600;margin:0 0 4px;}
   .section-sub{font-size:12px;color:var(--muted);margin:0 0 16px;}
+
+  .invite-row{display:flex;gap:10px;}
+  .invite-row input{flex:1;}
+  .invite-row button{padding:0 18px;background:var(--ink);color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap;transition:background 0.15s, transform 0.1s;}
+  .invite-row button:hover{background:#1E293B;}
+  .invite-row button:active{transform:scale(0.98);}
+  .invite-row button:disabled{background:#A3A9B4;cursor:not-allowed;}
+  .team-list{margin-top:16px;display:flex;flex-direction:column;gap:8px;}
+  .team-row{display:flex;align-items:center;justify-content:space-between;padding:10px 12px;border:1px solid var(--line);border-radius:8px;background:var(--paper);font-size:13px;}
+  .team-status{font-size:11px;padding:3px 9px;border-radius:12px;font-weight:600;}
+  .team-status.pending{background:#FDF0D9;color:#9A6B16;}
+  .team-status.active{background:#E3F3E9;color:var(--added);}
+  .team-remove{background:none;border:none;color:var(--removed);font-size:12px;cursor:pointer;padding:4px 6px;}
+  .team-remove:hover{text-decoration:underline;}
+  .team-note{font-size:12px;color:var(--muted);margin-top:10px;}
+  .upsell{background:#FDF0D9;border:1px solid #F0D9A8;border-radius:8px;padding:12px 14px;font-size:13px;color:#7A5410;}
 </style>
 </head>
 <body>
@@ -100,6 +116,12 @@
     <button class="btn-primary" id="saveBtn">Save changes</button>
     <div class="save-msg" id="saveMsg">Saved ✓</div>
   </div>
+
+  <div class="card" id="teamCard">
+    <div class="section-title">Team seats</div>
+    <div class="section-sub">Invite teammates to see and manage your monitored pages.</div>
+    <div id="teamBody">Loading...</div>
+  </div>
 </div>
 
 <script>
@@ -112,6 +134,78 @@ async function loadProfile() {
   document.getElementById('timezone').value = p.timezone || 'UTC';
   document.getElementById('planBadge').textContent = (p.plan || 'Free') + ' plan';
   updateAvatar(p);
+  loadTeam(p.plan === 'Pro');
+}
+
+function escapeHtml(s) { return String(s || '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+
+async function loadTeam(isPro) {
+  const body = document.getElementById('teamBody');
+  if (!isPro) {
+    body.innerHTML = `<div class="upsell">Team seats are a Pro feature. Upgrade to invite up to 3 teammates to your workspace.</div>`;
+    return;
+  }
+  try {
+    const res = await fetch('/api/team');
+    const data = await res.json();
+    let html = `
+      <div class="invite-row">
+        <input type="email" id="inviteEmail" placeholder="teammate@company.com" />
+        <button id="inviteBtn">Invite</button>
+      </div>`;
+    if (data.members && data.members.length) {
+      html += `<div class="team-list">` + data.members.map(m => `
+        <div class="team-row">
+          <span>${escapeHtml(m.email)}</span>
+          <span style="display:flex;align-items:center;gap:8px;">
+            <span class="team-status ${m.status}">${m.status === 'active' ? 'Active' : 'Pending'}</span>
+            <button class="team-remove" onclick="removeTeamMember('${m.id}')">Remove</button>
+          </span>
+        </div>`).join('') + `</div>`;
+    }
+    html += `<div class="team-note">${(data.members || []).length}/3 seats used</div>`;
+    if (data.memberOf && data.memberOf.length) {
+      html += `<div class="team-note">You're also a member of ${data.memberOf.length} other team${data.memberOf.length > 1 ? 's' : ''} — their shared pages show up on your dashboard.</div>`;
+    }
+    body.innerHTML = html;
+    document.getElementById('inviteBtn').addEventListener('click', inviteTeamMember);
+  } catch (e) {
+    body.innerHTML = `<div class="team-note">Couldn't load team.</div>`;
+  }
+}
+
+async function inviteTeamMember() {
+  const input = document.getElementById('inviteEmail');
+  const btn = document.getElementById('inviteBtn');
+  const email = input.value.trim();
+  if (!email) return;
+  btn.disabled = true;
+  btn.textContent = 'Inviting...';
+  try {
+    const res = await fetch('/api/team/invite', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email }),
+    });
+    const data = await res.json();
+    if (!res.ok) { alert(data.error || 'Could not invite.'); }
+    loadTeam(true);
+  } catch (e) {
+    alert('Network error.');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Invite';
+  }
+}
+
+async function removeTeamMember(id) {
+  if (!confirm('Remove this teammate? They will lose access to your pages.')) return;
+  try {
+    await fetch('/api/team/' + id, { method: 'DELETE' });
+    loadTeam(true);
+  } catch (e) {
+    alert('Network error.');
+  }
 }
 
 function updateAvatar(p) {
