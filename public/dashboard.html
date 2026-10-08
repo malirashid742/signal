@@ -294,6 +294,15 @@
           <input type="checkbox" id="autoPauseInput" style="width:auto;margin:0;" /> One-shot
         </label>
       </div>
+      <div class="channel-row" style="flex-direction:column;align-items:stretch;gap:8px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;">
+          <span>🔐 Requires login</span>
+          <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted);">
+            <input type="checkbox" id="requiresLoginInput" style="width:auto;margin:0;" /> <span id="loginProLabel">Pro</span>
+          </label>
+        </div>
+        <textarea id="authCookieInput" placeholder="Paste your session cookie (DevTools → Application → Cookies → copy the Cookie header value)" disabled style="display:none;margin-bottom:0;font-size:12px;padding:9px 12px;border-radius:8px;border:1px solid var(--border);font-family:monospace;min-height:50px;resize:vertical;"></textarea>
+      </div>
       <div class="channel-row"><span>📄 CSV report export</span><span style="font-size:11px;color:var(--muted);">Available per monitor</span></div>
       <div class="channel-row"><span>🔔 Browser notifications</span><button class="btn-secondary" id="enableNotifsBtn" style="padding:6px 12px;font-size:12px;">Enable</button></div>
       <div class="modal-actions">
@@ -374,7 +383,17 @@ function unlockProFrequencyOptions() {
     el.title = '';
     el.textContent = el.textContent.replace(' 🔒', '');
   });
+  document.getElementById('loginProLabel').textContent = '';
 }
+
+document.getElementById('requiresLoginInput').addEventListener('change', (e) => {
+  if (e.target.checked && !isProPlan) {
+    e.target.checked = false;
+    alert('Behind-login monitoring is a Pro feature. Upgrade to unlock.');
+    return;
+  }
+  document.getElementById('authCookieInput').style.display = e.target.checked ? 'block' : 'none';
+});
 
 document.getElementById('startMonitoring').addEventListener('click', async () => {
   const btn = document.getElementById('startMonitoring');
@@ -394,6 +413,7 @@ document.getElementById('startMonitoring').addEventListener('click', async () =>
         selector: document.getElementById('selectorInput').value.trim() || null,
         minImpact: document.getElementById('minImpactInput').value,
         autoPause: document.getElementById('autoPauseInput').checked,
+        authCookie: document.getElementById('requiresLoginInput').checked ? document.getElementById('authCookieInput').value.trim() : null,
       }),
     });
     const data = await res.json();
@@ -442,6 +462,7 @@ async function loadMonitors() {
             <span>${m.condition.replace('_',' ')}</span>
             ${m.minImpact && m.minImpact !== 'Low' ? `<span title="Only alerts on ${m.minImpact}+ impact">🔇 ${m.minImpact}+</span>` : ''}
             ${m.isShared ? `<span title="Shared with you by a teammate">👥 Team</span>` : ''}
+            ${m.requiresLogin ? `<span title="Monitored behind a login">🔐 Login</span>` : ''}
           </div>
           <div class="monitor-stats">
             <span class="chip">Added ${s.addedAt ? timeAgo(s.addedAt) : '–'}</span>
