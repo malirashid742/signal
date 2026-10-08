@@ -6,23 +6,29 @@ function hash(str) {
   return crypto.createHash("sha256").update(str).digest("hex");
 }
 
-async function fetchPage(url) {
-  const res = await fetch(url, {
-    headers: { "User-Agent": "Mozilla/5.0 (compatible; SignalBot/1.0)" },
-  });
+// cookieHeader (optional): a raw "Cookie: " header value, used to monitor pages
+// behind a login — the user pastes their browser session cookie once, we replay
+// it on every check. It's just a session token for this one page's requests;
+// we never see or need a password, and it's stored encrypted (see cookieCrypto.js).
+async function fetchPage(url, cookieHeader) {
+  const headers = { "User-Agent": "Mozilla/5.0 (compatible; SignalBot/1.0)" };
+  if (cookieHeader) headers.Cookie = cookieHeader;
+  const res = await fetch(url, { headers });
   if (!res.ok) throw new Error(`Fetch failed: ${res.status}`);
   return await res.text();
 }
 
 // Like fetchPage, but doesn't throw on non-2xx and records status + response time —
 // used for uptime tracking, where a 404/500/timeout IS the data point, not an error.
-async function fetchPageWithMeta(url, timeoutMs = 15000) {
+async function fetchPageWithMeta(url, timeoutMs = 15000, cookieHeader) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   const startedAt = Date.now();
   try {
+    const headers = { "User-Agent": "Mozilla/5.0 (compatible; SignalBot/1.0)" };
+    if (cookieHeader) headers.Cookie = cookieHeader;
     const res = await fetch(url, {
-      headers: { "User-Agent": "Mozilla/5.0 (compatible; SignalBot/1.0)" },
+      headers,
       signal: controller.signal,
     });
     const responseTimeMs = Date.now() - startedAt;

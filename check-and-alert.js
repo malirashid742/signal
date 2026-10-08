@@ -16,6 +16,7 @@ const crypto = require("crypto");
 const { fetchPage, extractData, diffSnapshots, outreachOpportunities, impactMeetsThreshold } = require("./engine");
 const { sendChangeAlert, sendSlackAlert, sendDiscordAlert } = require("./alerts");
 const { supabase } = require("./supabaseClient");
+const { decryptCookie } = require("./cookieCrypto");
 
 const DATA_DIR = path.join(__dirname, "data");
 const SUBS_FILE = path.join(DATA_DIR, "subscriptions.json");
@@ -115,7 +116,7 @@ async function processLegacySubscriptions() {
 // each does exactly one job and was tested under `set local role anon` before
 // being wired in here. This covers every account's monitors in one pass.
 async function processDashboardMonitors() {
-  const { data: monitors, error } = await supabase.rpc("cron_list_monitors_v4");
+  const { data: monitors, error } = await supabase.rpc("cron_list_monitors_v5");
   if (error) {
     console.error(`[monitors] Failed to list monitors: ${error.message}`);
     return;
@@ -126,7 +127,15 @@ async function processDashboardMonitors() {
     if (!isMonitorDue(monitor)) continue;
     console.log(`[monitors:${monitor.user_id}] Checking ${monitor.url} (condition: ${monitor.condition}, frequency: ${monitor.frequency}) ...`);
     try {
-      const html = await fetchPage(monitor.url);
+      let cookieHeader = null;
+      if (monitor.auth_cookie_encrypted) {
+        try {
+          cookieHeader = decryptCookie(monitor.auth_cookie_encrypted);
+        } catch (e) {
+          console.error(`  Couldn't decrypt stored cookie (COOKIE_ENCRYPTION_KEY missing/changed?): ${e.message}`);
+        }
+      }
+      const html = await fetchPage(monitor.url, cookieHeader);
       const snap = extractData(html, monitor.url, monitor.selector);
 
       const { data: lastRow } = await supabase.rpc("cron_get_last_snapshot", { p_page_id: monitor.page_id });

@@ -5,6 +5,7 @@ const crypto = require("crypto");
 const cookieParser = require("cookie-parser");
 const { v4: uuidv4 } = require("uuid");
 const { fetchPage, fetchPageWithMeta, extractData, diffSnapshots, fetchSitemapUrls, diffSitemap, publishingVelocity, outreachOpportunities, checkLinksInPool, impactMeetsThreshold } = require("./engine");
+const { encryptCookie, decryptCookie } = require("./cookieCrypto");
 const { generateShareCard } = require("./sharecard");
 const { sendSlackAlert, sendDiscordAlert } = require("./alerts");
 const { captureScreenshot, compareScreenshots } = require("./screenshot");
@@ -480,6 +481,7 @@ function mapMonitorRow(row) {
     selector: row.selector || null,
     minImpact: row.min_impact || "Low",
     autoPause: !!row.auto_pause,
+    requiresLogin: !!row.auth_cookie_encrypted, // cookie itself never sent to the client
     status: row.status,
     createdAt: row.created_at,
     lastCheckedAt: row.last_checked_at,
@@ -513,6 +515,7 @@ async function insertMonitorAsync(req, monitor) {
     selector: monitor.selector,
     min_impact: monitor.minImpact || "Low",
     auto_pause: !!monitor.autoPause,
+    auth_cookie_encrypted: monitor.authCookie ? encryptCookie(monitor.authCookie) : null,
     status: monitor.status,
   }).select().single();
   if (error) throw error;
@@ -541,6 +544,7 @@ async function updateMonitorAsync(req, id, fields) {
   if (fields.minImpact !== undefined) dbFields.min_impact = fields.minImpact;
   if (fields.autoPause !== undefined) dbFields.auto_pause = fields.autoPause;
   if (fields.frequency !== undefined) dbFields.frequency = fields.frequency;
+  if (fields.authCookie !== undefined) dbFields.auth_cookie_encrypted = fields.authCookie ? encryptCookie(fields.authCookie) : null;
   const { error } = await req.db.from("monitors").update(dbFields).eq("id", id);
   if (error) throw error;
 }
@@ -854,7 +858,7 @@ app.get("/api/monitors", requireAuth, async (req, res) => {
 // time it fires an alert — for one-shot "tell me once, then stop" tracking
 // (price drop hit, item back in stock) so credits/checks aren't wasted after.
 app.post("/api/monitors", requireAuth, async (req, res) => {
-  const { url, condition, frequency, channels, slackWebhook, discordWebhook, selector, minImpact, autoPause } = req.body;
+  const { url, condition, frequency, channels, slackWebhook, discordWebhook, selector, minImpact, autoPause, authCookie } = req.body;
   if (!url || !/^https?:\/\//.test(url)) {
     return res.status(400).json({ error: "Provide a valid URL." });
   }
@@ -872,6 +876,10 @@ app.post("/api/monitors", requireAuth, async (req, res) => {
     if (requestedFrequency !== "daily" && profile.plan !== "Pro") {
       return res.status(402).json({ error: "Hourly/12h checks are a Pro feature. Upgrade to unlock.", capReached: true });
     }
+    // Behind-login monitoring (a pasted session cookie) is Pro-only too.
+    if (authCookie && profile.plan !== "Pro") {
+      return res.status(402).json({ error: "Behind-login monitoring is a Pro feature. Upgrade to unlock.", capReached: true });
+    }
     const monitor = {
       id: uuidv4(),
       url,
@@ -884,6 +892,7 @@ app.post("/api/monitors", requireAuth, async (req, res) => {
       selector: selector ? selector.trim() : null,
       minImpact: ["Low", "Medium", "High"].includes(minImpact) ? minImpact : "Low",
       autoPause: !!autoPause,
+      authCookie: authCookie ? authCookie.trim() : null,
       status: "checking",
       createdAt: new Date().toISOString(),
     };
@@ -898,7 +907,7 @@ app.post("/api/monitors", requireAuth, async (req, res) => {
 // auto-pause, channels) without recreating it.
 app.patch("/api/monitors/:id", requireAuth, async (req, res) => {
   try {
-    const { minImpact, autoPause, status, slackWebhook, discordWebhook, selector, condition, frequency } = req.body;
+    const { minImpact, autoPause, status, slackWebhook, discordWebhook, selector, condition, frequency, authCookie } = req.body;
     const fields = {};
     if (minImpact !== undefined) fields.minImpact = minImpact;
     if (autoPause !== undefined) fields.autoPause = autoPause;
@@ -909,6 +918,13 @@ app.patch("/api/monitors/:id", requireAuth, async (req, res) => {
         if (profile.plan !== "Pro") return res.status(402).json({ error: "Hourly/12h checks are a Pro feature. Upgrade to unlock.", capReached: true });
       }
       fields.frequency = ["hourly", "12h", "daily"].includes(frequency) ? frequency : "daily";
+    }
+    if (authCookie !== undefined) {
+      if (authCookie) {
+        const profile = await loadProfileAsync(req);
+        if (profile.plan !== "Pro") return res.status(402).json({ error: "Behind-login monitoring is a Pro feature. Upgrade to unlock.", capReached: true });
+      }
+      fields.authCookie = authCookie ? authCookie.trim() : null;
     }
     await updateMonitorAsync(req, req.params.id, fields);
     res.json({ ok: true });
@@ -959,9 +975,17 @@ app.post("/api/monitors/:id/check", requireAuth, async (req, res) => {
       return res.status(429).json({ error: `Daily manual check limit reached (${quota.cap}/day on ${profile.plan} plan). Try again tomorrow${profile.plan !== "Pro" ? ", or upgrade to Pro for 200/day." : "."}`, rateLimited: true });
     }
 
+    // Behind-login monitoring: the encrypted cookie never leaves the server (it's
+    // not on the mapped monitor object returned to clients) — fetched fresh here.
+    let cookieHeader = null;
+    if (monitor.requiresLogin && !req.isDemo) {
+      const { data: cookRow } = await req.db.from("monitors").select("auth_cookie_encrypted").eq("id", monitor.id).single();
+      if (cookRow && cookRow.auth_cookie_encrypted) cookieHeader = decryptCookie(cookRow.auth_cookie_encrypted);
+    }
+
     // Uptime ping is recorded regardless of outcome — a 404/500/timeout IS the data
     // point for uptime tracking, unlike content checks where it's an error to throw.
-    const pageResult = await fetchPageWithMeta(monitor.url);
+    const pageResult = await fetchPageWithMeta(monitor.url, 15000, cookieHeader);
     await insertMonitorUptimePingAsync(req, monitor.pageId, { at: new Date().toISOString(), status: pageResult.status, up: pageResult.up, responseTimeMs: pageResult.responseTimeMs });
 
     if (!pageResult.up) {
